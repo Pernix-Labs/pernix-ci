@@ -47,3 +47,5 @@ run: run_d5e187bc3a67
 - 2026-11-22T19:57:45Z verdict — coord 9 APPROVE
 - 2026-11-22T19:58:46Z note — closeout: allowed append-only As-built notes section in design.md (body unchanged)
 - 2026-11-22T19:59:17Z closeout — all 9 coords approved; CI 7/7 green on 78dac54; as-built notes 1e3ad91
+- 2026-11-22T20:02:02Z note — closeout review: nothing blocking; rework for 4 low items (image-exists digest-missing error, retention 404 child fetch, nuget-push and build-push README notes); trivy cache save on failure skipped (perf only)
+- 2026-11-22T20:04:20Z note — closeout review rework done: 1ca9f6e, 440935d
