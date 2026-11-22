@@ -1,0 +1,75 @@
+name: test-dotnet-setup
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: _shared unit tests
+        run: python3 -I -m unittest discover -s tests/unit/_shared
+
+  global-json-plus-channel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: run
+        uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-setup/with-global-json
+          dotnet-version: 8.0.x
+      - name: assert SDK 10 resolved and net8 runtime installed
+        working-directory: tests/fixtures/dotnet-setup/with-global-json
+        env:
+          RESOLVED: ${{ steps.run.outputs.dotnet-version }}
+        run: |
+          set -euo pipefail
+          echo "dotnet-version=$RESOLVED"
+          [[ "$RESOLVED" == 10.* ]] || { echo "::error::expected 10.x SDK, got '$RESOLVED'"; exit 1; }
+          dotnet --list-runtimes | tee runtimes.txt
+          grep -q '^Microsoft.NETCore.App 8\.0\.' runtimes.txt || { echo "::error::expected .NET 8.0 runtime"; exit 1; }
+          [[ "${DOTNET_NOLOGO:-}" == 1 && "${DOTNET_CLI_TELEMETRY_OPTOUT:-}" == 1 ]] || { echo "::error::expected DOTNET_NOLOGO and DOTNET_CLI_TELEMETRY_OPTOUT"; exit 1; }
+
+  dotnet-version-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: run
+        uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-setup/no-global-json
+          dotnet-version: 10.0.x
+      - name: assert SDK 10 resolved
+        env:
+          RESOLVED: ${{ steps.run.outputs.dotnet-version }}
+        run: |
+          set -euo pipefail
+          [[ "$RESOLVED" == 10.* ]] || { echo "::error::expected 10.x SDK, got '$RESOLVED'"; exit 1; }
+
+  neither-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: run
+        uses: ./actions/dotnet-setup
+        continue-on-error: true
+        with:
+          working-directory: tests/fixtures/dotnet-setup/no-global-json
+      - name: assert failed
+        if: steps.run.outcome != 'failure'
+        run: echo "::error::expected failure" && exit 1

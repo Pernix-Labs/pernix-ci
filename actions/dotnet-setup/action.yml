@@ -1,0 +1,43 @@
+name: dotnet-setup
+description: Install the caller's .NET SDK from global.json and/or dotnet-version, and expose the resolved SDK version.
+
+inputs:
+  working-directory:
+    description: Directory whose global.json pins the SDK and where `dotnet --version` resolves.
+    required: false
+    default: .
+  global-json-file:
+    description: Path to global.json. Empty means `<working-directory>/global.json` when that file exists.
+    required: false
+    default: ""
+  dotnet-version:
+    description: Extra SDK versions or channels, one per line (for example 8.0.x). Required when no global.json exists.
+    required: false
+    default: ""
+
+outputs:
+  dotnet-version:
+    description: SDK version printed by `dotnet --version` in working-directory.
+    value: ${{ steps.resolve.outputs.dotnet-version }}
+
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_GLOBAL_JSON_FILE: ${{ inputs.global-json-file }}
+        INPUT_DOTNET_VERSION: ${{ inputs.dotnet-version }}
+      run: '"${{ github.action_path }}/detect.sh"'
+
+    - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+      with:
+        global-json-file: ${{ steps.detect.outputs.global-json }}
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - id: resolve
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: '"${{ github.action_path }}/detect.sh" --resolve'
