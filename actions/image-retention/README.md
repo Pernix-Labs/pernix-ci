@@ -83,7 +83,7 @@ jobs:
     permissions:
       packages: write
     steps:
-      - uses: pernix-labs/pernix-ci/actions/image-retention@<sha>
+      - uses: Pernix-Labs/pernix-ci/actions/image-retention@<commit-sha> # vX.Y.Z
         with:
           packages: |
             my-svc

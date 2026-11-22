@@ -67,16 +67,16 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-      - uses: actions/setup-dotnet@<sha> # vX.Y.Z
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: 8.0.x
       - id: pack
-        uses: pernix-labs/pernix-ci/actions/nuget-pack@<sha>
+        uses: Pernix-Labs/pernix-ci/actions/nuget-pack@<commit-sha> # vX.Y.Z
         with:
           projects: src/My.Lib/My.Lib.csproj
           version: 1.2.3
-      - uses: pernix-labs/pernix-ci/actions/nuget-push@<sha>
+      - uses: Pernix-Labs/pernix-ci/actions/nuget-push@<commit-sha> # vX.Y.Z
         with:
           packages: ${{ steps.pack.outputs.packages }}
           user: pernix-labs

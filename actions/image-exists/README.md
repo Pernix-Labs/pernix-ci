@@ -51,7 +51,7 @@ jobs:
       packages: read
     steps:
       - id: exists
-        uses: pernix-labs/pernix-ci/actions/image-exists@<sha>
+        uses: Pernix-Labs/pernix-ci/actions/image-exists@<commit-sha> # vX.Y.Z
         with:
           image: ghcr.io/pernix-labs/my-svc
           tag: sha-${{ github.sha }}

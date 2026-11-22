@@ -53,7 +53,7 @@ jobs:
       packages: write
     steps:
       - id: promote
-        uses: pernix-labs/pernix-ci/actions/image-promote@<sha>
+        uses: Pernix-Labs/pernix-ci/actions/image-promote@<commit-sha> # vX.Y.Z
         with:
           image: ghcr.io/pernix-labs/my-svc
           source-tag: sha-${{ github.sha }}
