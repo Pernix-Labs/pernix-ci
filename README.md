@@ -72,7 +72,7 @@ Reusable workflows compose the blocks into CI and CD for .NET mono-repos. A repo
 
 Flow:
 
-1. CI per commit (`push` to the default branch, `pull_request`): resolve units and their last-touch sha `L`, then per unit run the .NET gates, build and scan the image, and dry-check `nuget-pack`. On the default branch an existing `sha-<L>` image is reused and rescanned instead of rebuilt, and a new one is pushed. On pull requests the image is built and scanned locally and never pushed.
+1. CI per commit (`push` to the default branch, `pull_request`): resolve units and their last-touch sha `L`, then per unit run the .NET gates, build and scan the image, and dry-check `nuget-pack`. On the default branch an existing `sha-<L>` image is reused and rescanned instead of rebuilt, and a new one is pushed. A reused unit with packages still runs `nuget-vulnerability-gate`. On pull requests the image is built and scanned locally and never pushed.
 2. CD per tag (`<unit>/vX.Y.Z[-pre]`, or `vX.Y.Z[-pre]` in a single-unit repo): the caller `cd.yml` runs CI for the tagged commit, then reusable `cd.yml` rescans `sha-<L>` and promotes it to tag `X.Y.Z[-pre]`, then the caller `publish` job packs and pushes NuGet packages at that version.
 3. Retention on a schedule: delete expired GHCR versions of every unit image.
 

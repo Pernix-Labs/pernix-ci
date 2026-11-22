@@ -15,8 +15,10 @@ When retention deleted `sha-<L>`, the caller's `ci` job rebuilds it before `rele
 | Job | Runs when | Does |
 |---|---|---|
 | `resolve` | always | Checks out the caller repo at `commit` if set, else at the tag. Runs `dotnet-setup`, `release-units`, `release-tag`, selects the tagged unit. |
-| `promote` | unit has an image | `image-exists` on `sha-<L>` (missing fails), `image-scan` of `<image>@<digest>`, `image-promote` `sha-<L>` → `<version>`. |
+| `promote` | unit has an image | `image-exists` on `sha-<L>` (missing fails), `image-scan` of `<image>@<digest>`, `image-promote` `sha-<L>` → `<version>`. Digest check, see below. |
 | `outputs` | `resolve` succeeded and `promote` succeeded or was skipped | Exposes the workflow outputs. A failed or cancelled `promote` blocks it, so a caller `publish` job gated on this workflow never runs after a failed promote. |
+
+`sha-<L>` is a mutable tag and `image-promote` resolves it again. `promote` therefore runs `image-exists` on `sha-<L>` again right before `image-promote` and fails, with no tag written, when the digest differs from the scanned one. After `image-promote` it fails when the `digest` output differs from the scanned one and reports both digests. That window is the few seconds of the promote call, and the failed job blocks `publish`.
 
 The workflow checks out pernix-ci at its own commit (`job.workflow_sha`) into `pernix-ci/` and calls blocks by local path ([ADR 0012](../adr/0012-reusable-workflow-self-pinning.md)). The caller repo is checked out into `repo/`.
 

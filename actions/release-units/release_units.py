@@ -77,7 +77,7 @@ def is_test_framework_package(package_id):
 def ci_version(sha):
     """Commit-based CI version (Req 3.8). The 'g' prefix keeps the prerelease
     identifier alphanumeric, so an all-digit sha never yields a leading zero."""
-    if not SHA_RE.match(sha):
+    if not SHA_RE.fullmatch(sha):
         raise ResolveError("invalid commit sha '%s'" % sha)
     return "0.0.0-ci.g" + sha[:7]
 
@@ -183,7 +183,7 @@ def validate_matrix(data, base_dir):
             err(label, "-", "unit must be a mapping")
             continue
         name = raw.get("name")
-        if not isinstance(name, str) or not NAME_RE.match(name):
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):
             err(label, "name", "must match ^[a-z0-9][a-z0-9-]*$, got %s" % json.dumps(name))
         else:
             label = name
@@ -217,7 +217,7 @@ def validate_matrix(data, base_dir):
                 context = check_path(label, "image.context", image.get("context", "."), "dir")
                 image_name = image.get("name", label)
                 if "name" in image and (not isinstance(image_name, str)
-                                        or not PACKAGE_RE.match(image_name)):
+                                        or not PACKAGE_RE.fullmatch(image_name)):
                     err(label, "image.name",
                         "must match ^[a-z0-9][a-z0-9._-]*$, got %s" % json.dumps(image_name))
                 unit["image"] = {"project": project, "dockerfile": dockerfile,
@@ -243,6 +243,8 @@ def validate_matrix(data, base_dir):
                     problem = validate_relative_path(value)
                     if problem:
                         err(label, key, problem)
+                    elif posixpath.normpath(value.replace("\\", "/")) == ".":
+                        err(label, key, "must name a path below working-directory, got '%s'" % value)
                     elif has_glob(value):
                         unit["extra-inputs"].append(value)
                     else:
@@ -513,9 +515,9 @@ def resolve(env, units_json, evaluator=msbuild_evaluate, sln_lister=solution_pro
         units = [u for u in units if u["name"] == unit_filter]
 
     if any(u["image"] for u in units):
-        if not OWNER_RE.match(owner):
+        if not OWNER_RE.fullmatch(owner):
             raise ResolveError("input 'owner' must be a GitHub owner name, got '%s'" % owner)
-        if not PREFIX_RE.match(prefix):
+        if not PREFIX_RE.fullmatch(prefix):
             raise ResolveError("input 'image-name-prefix' must match ^[a-z0-9._-]*$, got '%s'"
                                % prefix)
 
@@ -541,7 +543,7 @@ def resolve(env, units_json, evaluator=msbuild_evaluate, sln_lister=solution_pro
         test_rel = [to_rel(p, base) for p in tests]
         image = u["image"]
         package = (prefix + image["name"]) if image else ""
-        if image and not PACKAGE_RE.match(package):
+        if image and not PACKAGE_RE.fullmatch(package):
             raise ResolveError("unit %s: image package name '%s' is invalid" % (u["name"], package))
         results.append({
             "name": u["name"],

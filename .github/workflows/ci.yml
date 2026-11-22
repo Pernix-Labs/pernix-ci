@@ -124,6 +124,7 @@ jobs:
         id: mode
         env:
           PUSH_IMAGE: ${{ inputs.push-image }}
+          SHA_INPUT: ${{ inputs.sha }}
           PUSH: ${{ inputs.push-image == 'true' || (inputs.push-image == 'auto' && (inputs.tag != '' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)))) }}
           RUN_KEY: ${{ job.check_run_id }}
         run: |
@@ -131,6 +132,10 @@ jobs:
             auto | true | false) ;;
             *) echo "::error::input 'push-image' must be auto, true or false, got '${PUSH_IMAGE}'"; exit 1 ;;
           esac
+          if [ -n "${SHA_INPUT}" ] && ! [[ "${SHA_INPUT}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::input 'sha' must be a 40-hex lowercase commit sha, got '${SHA_INPUT}'"
+            exit 1
+          fi
           { echo "push=${PUSH}"; echo "run-key=${RUN_KEY}"; } >>"$GITHUB_OUTPUT"
       - name: Guard pernix-ci self-pin
         env:
@@ -245,12 +250,15 @@ jobs:
           working-directory: ${{ env.UNIT_WD }}
           project: ${{ steps.solution.outputs.solution }}
 
-      # Gates, skipped on reuse (Req 4.5).
-      - if: steps.exists.outputs.exists != 'true'
+      # Vulnerability gate: build path, or reuse of a unit with packages, so a
+      # reused tag never publishes packages past a new advisory.
+      - if: steps.exists.outputs.exists != 'true' || contains(matrix.unit.kinds, 'packages')
         uses: ./pernix-ci/actions/nuget-vulnerability-gate
         with:
           working-directory: ${{ env.UNIT_WD }}
           project: ${{ steps.solution.outputs.solution }}
+
+      # Remaining gates, skipped on reuse (Req 4.5).
       - if: steps.exists.outputs.exists != 'true'
         uses: ./pernix-ci/actions/nuget-deprecation-report
         with:

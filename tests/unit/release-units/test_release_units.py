@@ -176,6 +176,24 @@ class Schema(MatrixTestCase):
                 self.assertProblem({"units": [{"name": "lib", "packages": [value]}]},
                                    "lib", "packages[0]", fragment)
 
+    def test_trailing_newline_rejected(self):
+        self.assertProblem({"units": [{"name": "svc\n", "packages": ["src/Lib/Lib.csproj"]}]},
+                           "#1", "name", "must match")
+        self.assertProblem({"units": [{"name": "svc", "image": {
+            "project": "src/Svc/Svc.csproj", "dockerfile": "src/Svc/Dockerfile", "name": "svc\n"}}]},
+            "svc", "image.name", "must match")
+
+    def test_extra_inputs_repo_root_rejected(self):
+        for value in (".", "./", "src/.."):
+            with self.subTest(value=value):
+                fragment = "'..'" if ".." in value else "below working-directory"
+                self.assertProblem({"units": [{"name": "lib", "packages": ["src/Lib/Lib.csproj"],
+                                               "extra-inputs": [value]}]},
+                                   "lib", "extra-inputs[0]", fragment)
+        self.assertProblem({"units": [{"name": "lib", "packages": ["src/Lib/Lib.csproj"],
+                                       "extra-inputs": [""]}]},
+                           "lib", "extra-inputs[0]", "non-empty string")
+
     def test_extra_inputs_empty(self):
         self.assertProblem({"units": [{"name": "lib", "packages": ["src/Lib/Lib.csproj"],
                                        "extra-inputs": []}]}, "lib", "extra-inputs", "non-empty")
@@ -330,7 +348,7 @@ class CiVersion(unittest.TestCase):
                 self.assertRegex(ru.ci_version(sha), SEMVER_RE)
 
     def test_rejects_non_sha(self):
-        for sha in ("", "abc", "G" * 40, "0" * 39):
+        for sha in ("", "abc", "G" * 40, "0" * 39, "0" * 40 + "\n"):
             with self.assertRaises(ru.ResolveError):
                 ru.ci_version(sha)
 

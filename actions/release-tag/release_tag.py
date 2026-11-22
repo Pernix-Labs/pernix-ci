@@ -44,7 +44,7 @@ def parse_unit_names(raw):
     if not names:
         raise TagError("input 'unit-names' is empty")
     for n in names:
-        if not NAME_RE.match(n):
+        if not NAME_RE.fullmatch(n):
             raise TagError("input 'unit-names' holds invalid unit name '%s'" % n)
     if len(set(names)) != len(names):
         raise TagError("input 'unit-names' holds duplicate unit names")
@@ -92,7 +92,7 @@ def resolve_commit(cwd, tag, override):
         if existing is None:
             raise TagError("tag '%s' not found in the checkout (fetch tags, fetch-depth: 0)" % tag)
         return existing
-    if not SHA_RE.match(override):
+    if not SHA_RE.fullmatch(override):
         raise TagError("input 'commit' must be a 40-character lower-case hex sha, got '%s'"
                        % override)
     if git(cwd, "cat-file", "-e", "%s^{commit}" % override, check=False).returncode != 0:
@@ -106,7 +106,7 @@ def resolve_commit(cwd, tag, override):
 def check_reachable(cwd, commit, branch):
     if not branch:
         raise TagError("input 'default-branch' is empty")
-    if not BRANCH_RE.match(branch) or branch.startswith("-") or \
+    if not BRANCH_RE.fullmatch(branch) or branch.startswith("-") or \
             git(cwd, "check-ref-format", "--branch", branch, check=False).returncode != 0:
         raise TagError("input 'default-branch' '%s' is not a valid branch name" % branch)
     ref = "refs/remotes/origin/%s" % branch

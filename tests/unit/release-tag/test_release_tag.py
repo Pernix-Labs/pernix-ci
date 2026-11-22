@@ -141,6 +141,11 @@ class GitTests(unittest.TestCase):
         self.fails(self.env("svc/v0.0.1", commit="abc"), "40-character")
         self.fails(self.env("svc/v0.0.1", commit="f" * 40), "is not a commit")
 
+    def test_commit_override_trailing_newline(self):
+        with self.assertRaises(rt.TagError) as ctx:
+            rt.resolve_commit(self.repo, "svc/v0.0.1-selftest.1", self.sha["c2"] + "\n")
+        self.assertIn("40-character", str(ctx.exception))
+
     def test_default_branch(self):
         self.fails(self.env("svc/v1.2.3", branch=""), "'default-branch' is empty")
         self.fails(self.env("svc/v1.2.3", branch="--all"), "not a valid branch name")

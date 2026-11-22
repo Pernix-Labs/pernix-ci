@@ -185,12 +185,40 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE }}@${{ steps.exists.outputs.digest }}
 
+      # sha-<L> is mutable: promote only the scanned digest.
+      - id: recheck
+        uses: ./pernix-ci/actions/image-exists
+        with:
+          image: ${{ env.IMAGE }}
+          tag: ${{ env.SOURCE_TAG }}
+
+      - name: Require scanned digest before promote
+        env:
+          SCANNED: ${{ steps.exists.outputs.digest }}
+          CURRENT: ${{ steps.recheck.outputs.digest }}
+        run: |
+          if [ "${CURRENT}" != "${SCANNED}" ]; then
+            echo "::error::${IMAGE}:${SOURCE_TAG} moved after scan: scanned ${SCANNED}, now '${CURRENT}'. No tags written. Re-run cd."
+            exit 1
+          fi
+
       - id: promote
         uses: ./pernix-ci/actions/image-promote
         with:
           image: ${{ env.IMAGE }}
           source-tag: ${{ env.SOURCE_TAG }}
           tags: ${{ needs.resolve.outputs.version }}
+
+      - name: Require scanned digest after promote
+        env:
+          SCANNED: ${{ steps.exists.outputs.digest }}
+          PROMOTED: ${{ steps.promote.outputs.digest }}
+          TAGS: ${{ needs.resolve.outputs.version }}
+        run: |
+          if [ "${PROMOTED}" != "${SCANNED}" ]; then
+            echo "::error::${IMAGE}:${SOURCE_TAG} moved during promote: scanned ${SCANNED}, promoted '${PROMOTED}' as ${TAGS}. The promoted tag points at an unscanned digest. Delete it and re-run cd."
+            exit 1
+          fi
 
       - name: Image ref
         id: ref

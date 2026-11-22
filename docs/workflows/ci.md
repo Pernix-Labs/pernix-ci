@@ -17,11 +17,12 @@ Unit leg:
 
 1. Image unit with push mode on: `image-exists` on `<image>:sha-<L>`. Exists → reuse.
 2. Not reused, or unit has packages: `dotnet-setup`, `dotnet-unit-solution`, `dotnet-restore` on the generated unit solution.
-3. Not reused: `nuget-vulnerability-gate`, `nuget-deprecation-report`, `dotnet-build`, `dotnet-test`. A unit with no test projects skips `dotnet-test` with a notice.
-4. Image unit, not reused: `image-build-push` with `sha` = `L`, `version` = CI version `0.0.0-ci.g<L[:7]>`, `push` = push mode.
-5. Image unit: `image-scan`, always. Remote digest when push mode is on (reused or pushed), local Docker image when off.
-6. Packages unit: `nuget-pack` dry check at the CI version into `$RUNNER_TEMP`. Never pushed. Runs on reuse too.
-7. Leg result `{name, last-touch-sha, image-ref, reused}` uploaded as artifact `unit-result-<run_attempt>-<resolve check_run_id>-<name>`. The `check_run_id` of the `resolve` job keeps names unique when one caller run calls `ci.yml` more than once. TRX artifacts use `test-results-<run_attempt>-<resolve check_run_id>-<name>` for the same reason.
+3. Not reused, or unit has packages: `nuget-vulnerability-gate`. A reused unit with packages is gated on every run, so a release never publishes packages past an advisory raised after `sha-<L>` was built.
+4. Not reused: `nuget-deprecation-report`, `dotnet-build`, `dotnet-test`. A unit with no test projects skips `dotnet-test` with a notice.
+5. Image unit, not reused: `image-build-push` with `sha` = `L`, `version` = CI version `0.0.0-ci.g<L[:7]>`, `push` = push mode.
+6. Image unit: `image-scan`, always. Remote digest when push mode is on (reused or pushed), local Docker image when off.
+7. Packages unit: `nuget-pack` dry check at the CI version into `$RUNNER_TEMP`. Never pushed. Runs on reuse too.
+8. Leg result `{name, last-touch-sha, image-ref, reused}` uploaded as artifact `unit-result-<run_attempt>-<resolve check_run_id>-<name>`. The `check_run_id` of the `resolve` job keeps names unique when one caller run calls `ci.yml` more than once. TRX artifacts use `test-results-<run_attempt>-<resolve check_run_id>-<name>` for the same reason.
 
 Push mode is on when `push-image` is `true`, or `push-image` is `auto` and either `tag` is set or the event is a push to the default branch. Pull requests (including forks) and other branches build and scan locally and write nothing to GHCR.
 
@@ -33,7 +34,7 @@ Workspace per job: caller repo in `repo/`, pernix-ci in `pernix-ci/` at `job.wor
 |---|---|---|
 | `units-file` | `.github/release-units.yml` | Matrix file, relative to `working-directory`. |
 | `working-directory` | `.` | Mono-repo root inside the caller repo. |
-| `sha` | | Commit to gate. Empty means PR head sha, else `github.sha`. Ignored when `tag` is set. |
+| `sha` | | Commit to gate, 40-hex lowercase sha (anything else fails `resolve`). Empty means PR head sha, else `github.sha`. Ignored when `tag` is set. |
 | `unit` | | Gate only this unit. Empty gates all. Ignored when `tag` is set. |
 | `tag` | | Release tag `<unit>/vX.Y.Z[-pre]` (CD use). Gates the tagged unit at the tagged commit. |
 | `commit` | | Self-test only. Commit used instead of resolving `tag`. Callers leave empty. |
