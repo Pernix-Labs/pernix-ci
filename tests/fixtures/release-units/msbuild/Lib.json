@@ -1,0 +1,31 @@
+{
+  "Properties": {
+    "IsTestProject": "",
+    "IsTestingPlatformApplication": ""
+  },
+  "Items": {
+    "ProjectReference": [
+      {
+        "Identity": "../Shared/Shared.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "/repo/src/Shared/Shared.csproj",
+        "RootDir": "/",
+        "Filename": "Shared",
+        "Extension": ".csproj",
+        "RelativeDir": "../Shared/",
+        "Directory": "repo/src/Shared/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/repo/src/Lib/Lib.csproj",
+        "DefiningProjectDirectory": "/repo/src/Lib/",
+        "DefiningProjectName": "Lib",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ],
+    "PackageReference": []
+  }
+}

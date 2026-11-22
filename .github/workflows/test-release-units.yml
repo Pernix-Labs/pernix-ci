@@ -1,0 +1,206 @@
+name: test-release-units
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit tests (release-units)
+        run: python3 -I -m unittest discover -s tests/unit/release-units -v
+
+  self-test:
+    runs-on: ubuntu-latest
+    env:
+      SELFTEST: tests/fixtures/release-units/selftest.sh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/release-flow/repo
+
+      # Fixture materialised as a fresh git repo outside the checkout.
+      - id: c0
+        name: Materialise fixture repo
+        run: '"$SELFTEST" init tests/fixtures/release-flow/repo "$RUNNER_TEMP/repo"'
+      - id: r0
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: Assert baseline
+        env:
+          UNITS: ${{ steps.r0.outputs.units }}
+          NAMES: ${{ steps.r0.outputs.unit-names }}
+          COUNT: ${{ steps.r0.outputs.count }}
+          SHA: ${{ steps.c0.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$COUNT" == "2" ]] || { echo "::error::expected count 2, got '$COUNT'"; exit 1; }
+          [[ "$NAMES" == $'svc\nlib' ]] || { echo "::error::unexpected unit-names '$NAMES'"; exit 1; }
+          jq -e --arg sha "$SHA" '
+            (.[] | select(.name == "svc")) as $svc
+            | (.[] | select(.name == "lib")) as $lib
+            | ($svc."last-touch-sha" == $sha) and ($lib."last-touch-sha" == $sha)
+            and ($svc."ci-version" == "0.0.0-ci.g\($sha[0:7])")
+            and ($svc.kinds == ["image"]) and ($lib.kinds == ["packages"])
+            and ($svc.image == "ghcr.io/pernix-labs/svc") and ($svc."image-package" == "svc")
+            and ($lib.image == "")
+            and ($svc."test-projects" == ["tests/Svc.Tests/Svc.Tests.csproj"])
+            and ($lib."test-projects" == ["tests/Lib.Tests/Lib.Tests.csproj"])
+            and ($lib."packages-list" == "src/Lib/Lib.csproj")
+            and (($svc.projects | index("src/Shared/Shared.csproj")) != null)
+            and (($lib.projects | index("src/Svc/Svc.csproj")) == null)
+          ' <<<"$UNITS" >/dev/null || { echo "::error::baseline units mismatch: $UNITS"; exit 1; }
+
+      # Case 1: Shared change moves both units.
+      - id: c1
+        name: "Commit: src/Shared/Greeter.cs"
+        run: '"$SELFTEST" change "$RUNNER_TEMP/repo" src/Shared/Greeter.cs'
+      - id: r1
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: "Assert: Shared change moves both units"
+        env:
+          CUR: ${{ steps.r1.outputs.units }}
+          PREV: ${{ steps.r0.outputs.units }}
+          SHA: ${{ steps.c1.outputs.sha }}
+        run: '"$SELFTEST" assert svc lib'
+
+      # Case 2: Svc-only change moves svc.
+      - id: c2
+        name: "Commit: src/Svc/Program.cs"
+        run: '"$SELFTEST" change "$RUNNER_TEMP/repo" src/Svc/Program.cs'
+      - id: r2
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: "Assert: Svc-only change moves svc"
+        env:
+          CUR: ${{ steps.r2.outputs.units }}
+          PREV: ${{ steps.r1.outputs.units }}
+          SHA: ${{ steps.c2.outputs.sha }}
+        run: '"$SELFTEST" assert svc'
+
+      # Case 3: Directory.Packages.props change moves both units.
+      - id: c3
+        name: "Commit: Directory.Packages.props"
+        run: '"$SELFTEST" change "$RUNNER_TEMP/repo" Directory.Packages.props'
+      - id: r3
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: "Assert: Directory.Packages.props change moves both units"
+        env:
+          CUR: ${{ steps.r3.outputs.units }}
+          PREV: ${{ steps.r2.outputs.units }}
+          SHA: ${{ steps.c3.outputs.sha }}
+        run: '"$SELFTEST" assert svc lib'
+
+      # Case 4: Unrelated file moves no unit.
+      - id: c4
+        name: "Commit: README.md"
+        run: '"$SELFTEST" change "$RUNNER_TEMP/repo" README.md'
+      - id: r4
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: "Assert: Unrelated file moves no unit"
+        env:
+          CUR: ${{ steps.r4.outputs.units }}
+          PREV: ${{ steps.r3.outputs.units }}
+          SHA: ${{ steps.c4.outputs.sha }}
+        run: '"$SELFTEST" assert'
+
+      # Case 5: Dockerfile change moves svc.
+      - id: c5
+        name: "Commit: src/Svc/Dockerfile"
+        run: '"$SELFTEST" change "$RUNNER_TEMP/repo" src/Svc/Dockerfile'
+      - id: r5
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: "Assert: Dockerfile change moves svc"
+        env:
+          CUR: ${{ steps.r5.outputs.units }}
+          PREV: ${{ steps.r4.outputs.units }}
+          SHA: ${{ steps.c5.outputs.sha }}
+        run: '"$SELFTEST" assert svc'
+
+      # Case 6: Lib.Tests change moves lib.
+      - id: c6
+        name: "Commit: tests/Lib.Tests/ShouterTests.cs"
+        run: '"$SELFTEST" change "$RUNNER_TEMP/repo" tests/Lib.Tests/ShouterTests.cs'
+      - id: r6
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: "Assert: Lib.Tests change moves lib"
+        env:
+          CUR: ${{ steps.r6.outputs.units }}
+          PREV: ${{ steps.r5.outputs.units }}
+          SHA: ${{ steps.c6.outputs.sha }}
+        run: '"$SELFTEST" assert lib'
+
+      # Case 7: extra-inputs change moves svc.
+      - id: c7
+        name: "Commit: deploy/svc.conf"
+        run: '"$SELFTEST" change "$RUNNER_TEMP/repo" deploy/svc.conf'
+      - id: r7
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          owner: Pernix-Labs
+      - name: "Assert: extra-inputs change moves svc"
+        env:
+          CUR: ${{ steps.r7.outputs.units }}
+          PREV: ${{ steps.r6.outputs.units }}
+          SHA: ${{ steps.c7.outputs.sha }}
+        run: '"$SELFTEST" assert svc'
+
+      # Unit filter: one element.
+      - id: filtered
+        uses: ./actions/release-units
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          unit: lib
+      - name: "Assert: unit filter returns one element"
+        env:
+          UNITS: ${{ steps.filtered.outputs.units }}
+          NAMES: ${{ steps.filtered.outputs.unit-names }}
+          COUNT: ${{ steps.filtered.outputs.count }}
+        run: |
+          [[ "$COUNT" == "1" && "$NAMES" == "lib" ]] || { echo "::error::expected only lib, got count '$COUNT' names '$NAMES'"; exit 1; }
+          jq -e 'length == 1 and .[0].name == "lib"' <<<"$UNITS" >/dev/null || { echo "::error::unexpected units: $UNITS"; exit 1; }
+
+      # Shallow clone: step must fail.
+      - name: Shallow clone
+        run: git clone -q --depth 1 "file://$RUNNER_TEMP/repo" "$RUNNER_TEMP/shallow"
+      - id: shallow
+        uses: ./actions/release-units
+        continue-on-error: true
+        with:
+          working-directory: ${{ runner.temp }}/shallow
+      - name: "Assert: shallow clone fails"
+        env:
+          OUTCOME: ${{ steps.shallow.outcome }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure on shallow clone, got '$OUTCOME'"; exit 1; }
