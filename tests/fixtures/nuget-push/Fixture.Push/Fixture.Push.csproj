@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageId>Pernix.Ci.Fixture.Push</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>pernix-ci</Authors>
+    <Description>nuget-push self-test fixture.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+</Project>

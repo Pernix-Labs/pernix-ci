@@ -1,0 +1,70 @@
+name: test-nuget-push
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # No id-token: write. Dry-run never calls NuGet/login or nuget.org (G4).
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Pack fixture
+        run: dotnet pack tests/fixtures/nuget-push/Fixture.Push/Fixture.Push.csproj -c Release -o "$RUNNER_TEMP/nuget-push-pkgs"
+
+      - id: push
+        name: Dry-run push to local feed
+        uses: ./actions/nuget-push
+        with:
+          packages: ${{ runner.temp }}/nuget-push-pkgs/*.nupkg
+          dry-run: "true"
+          local-feed-dir: ${{ runner.temp }}/nuget-push-feed
+
+      - name: Assert package in local feed
+        env:
+          COUNT: ${{ steps.push.outputs.pushed-count }}
+        run: |
+          [[ "$COUNT" == "1" ]] || { echo "::error::expected pushed-count=1, got '${COUNT}'"; exit 1; }
+          found="$(find "$RUNNER_TEMP/nuget-push-feed" -iname 'pernix.ci.fixture.push.1.0.0.nupkg' | wc -l)"
+          [[ "$found" -eq 1 ]] || { echo "::error::package not found in local feed"; find "$RUNNER_TEMP/nuget-push-feed"; exit 1; }
+
+      - id: repush
+        name: Re-push with skip-duplicate
+        uses: ./actions/nuget-push
+        with:
+          packages: ${{ runner.temp }}/nuget-push-pkgs/*.nupkg
+          dry-run: "true"
+          skip-duplicate: "true"
+          local-feed-dir: ${{ runner.temp }}/nuget-push-feed
+
+      - name: Assert re-push succeeded
+        env:
+          COUNT: ${{ steps.repush.outputs.pushed-count }}
+        run: |
+          [[ "$COUNT" == "1" ]] || { echo "::error::expected pushed-count=1 on re-push, got '${COUNT}'"; exit 1; }
+
+      - id: zero-match
+        name: Zero-match glob must fail
+        continue-on-error: true
+        uses: ./actions/nuget-push
+        with:
+          packages: ${{ runner.temp }}/nuget-push-pkgs/does-not-exist-*.nupkg
+          dry-run: "true"
+          local-feed-dir: ${{ runner.temp }}/nuget-push-feed
+
+      - name: Assert zero-match failed
+        env:
+          OUTCOME: ${{ steps.zero-match.outcome }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure for zero-match glob, got '${OUTCOME}'"; exit 1; }

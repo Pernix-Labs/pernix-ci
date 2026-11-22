@@ -1,0 +1,56 @@
+name: nuget-push
+description: Push .nupkg files to nuget.org via Trusted Publishing (OIDC), in the caller's job. No API key input.
+
+inputs:
+  packages:
+    description: Glob or newline list of globs/paths for .nupkg files. Zero matches fails.
+    required: true
+  user:
+    description: nuget.org profile name that owns the Trusted Publishing policy. Required unless dry-run is true.
+    required: false
+    default: ""
+  skip-duplicate:
+    description: Do not fail when a package version already exists.
+    required: false
+    default: "true"
+  dry-run:
+    description: Skip NuGet/login and push to a local folder feed instead of nuget.org.
+    required: false
+    default: "false"
+  local-feed-dir:
+    description: Local folder feed for dry-run. Empty means $RUNNER_TEMP/nuget-local-feed.
+    required: false
+    default: ""
+
+outputs:
+  pushed-count:
+    description: Number of .nupkg files pushed successfully, including skipped duplicates.
+    value: ${{ steps.push.outputs.pushed-count }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        USER_NAME: ${{ inputs.user }}
+        SKIP_DUPLICATE: ${{ inputs.skip-duplicate }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "$GITHUB_ACTION_PATH/nuget-push.sh" resolve
+
+    - id: login
+      if: inputs.dry-run != 'true'
+      uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+      with:
+        user: ${{ inputs.user }}
+
+    - id: push
+      shell: bash
+      env:
+        RESOLVED_PACKAGES: ${{ steps.resolve.outputs.packages }}
+        NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        SKIP_DUPLICATE: ${{ inputs.skip-duplicate }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        LOCAL_FEED_DIR: ${{ inputs.local-feed-dir }}
+      run: bash "$GITHUB_ACTION_PATH/nuget-push.sh" push
