@@ -1,0 +1,117 @@
+name: image-retention
+
+# Reusable GHCR retention for every image unit in the release-unit matrix.
+# Derives package names via release-units, then runs image-retention with
+# P5 defaults unless overridden. Self-pins to its own commit via
+# job.workflow_sha (docs/adr/0012-reusable-workflow-self-pinning.md).
+
+on:
+  workflow_call:
+    inputs:
+      units-file:
+        description: Matrix file, relative to working-directory.
+        type: string
+        required: false
+        default: .github/release-units.yml
+      working-directory:
+        description: Mono-repo root inside the caller repo.
+        type: string
+        required: false
+        default: .
+      dry-run:
+        description: List planned deletions and delete nothing.
+        type: boolean
+        required: false
+        default: false
+      max-age-days:
+        description: Delete sha-only (or untagged) versions older than this many days.
+        type: number
+        required: false
+        default: 14
+      prerelease-max-age-days:
+        description: Delete prerelease versions older than this many days.
+        type: number
+        required: false
+        default: 14
+      keep-versions:
+        description: Number of newest stable versions to keep per package.
+        type: number
+        required: false
+        default: 5
+      image-name-prefix:
+        description: Prefix for every GHCR package name (self-tests use per-run packages).
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Guard pernix-ci self-pin
+        env:
+          PERNIX_CI_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [ -z "${PERNIX_CI_SHA}" ]; then
+            echo "::error::pernix-ci reusable workflows require github.com job.workflow_sha"
+            exit 1
+          fi
+      - name: Checkout pernix-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pernix-Labs/pernix-ci
+          ref: ${{ job.workflow_sha }}
+          path: pernix-ci
+          persist-credentials: false
+      - name: Checkout caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./pernix-ci/actions/dotnet-setup
+        with:
+          working-directory: repo/${{ inputs.working-directory }}
+
+      - id: units
+        uses: ./pernix-ci/actions/release-units
+        with:
+          units-file: ${{ inputs.units-file }}
+          working-directory: repo/${{ inputs.working-directory }}
+          image-name-prefix: ${{ inputs.image-name-prefix }}
+
+      - name: List image packages
+        id: packages
+        env:
+          UNITS: ${{ steps.units.outputs.units }}
+        run: |
+          set -euo pipefail
+          list=$(jq -r '[.[] | .["image-package"] | select(. != "")] | unique | .[]' <<<"$UNITS")
+          {
+            echo "count=$(grep -c . <<<"$list" || true)"
+            echo "packages<<PERNIX_CI_EOF"
+            echo "$list"
+            echo "PERNIX_CI_EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: No image units
+        if: steps.packages.outputs.count == '0'
+        env:
+          UNITS_FILE: ${{ inputs.units-file }}
+        run: echo "::notice::no image units in ${UNITS_FILE}, nothing to prune"
+
+      - if: steps.packages.outputs.count != '0'
+        uses: ./pernix-ci/actions/image-retention
+        with:
+          packages: ${{ steps.packages.outputs.packages }}
+          dry-run: ${{ inputs.dry-run }}
+          max-age-days: ${{ inputs.max-age-days }}
+          prerelease-max-age-days: ${{ inputs.prerelease-max-age-days }}
+          keep-versions: ${{ inputs.keep-versions }}

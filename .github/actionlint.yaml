@@ -1,0 +1,13 @@
+# actionlint 1.7.12 does not know the job.workflow_sha context that reusable
+# workflows use for self-pinning (docs/adr/0012-reusable-workflow-self-pinning.md).
+# Remove these entries once actionlint learns job.workflow_sha.
+paths:
+  .github/workflows/ci.yml:
+    ignore:
+      - 'property "workflow_sha" is not defined'
+  .github/workflows/cd.yml:
+    ignore:
+      - 'property "workflow_sha" is not defined'
+  .github/workflows/image-retention.yml:
+    ignore:
+      - 'property "workflow_sha" is not defined'
