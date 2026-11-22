@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageId>Pernix.Ci.Fixture.Lib</PackageId>
+    <Authors>pernix-ci</Authors>
+    <Description>nuget-pack self-test fixture.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+</Project>

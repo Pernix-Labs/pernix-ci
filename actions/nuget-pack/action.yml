@@ -1,0 +1,41 @@
+name: nuget-pack
+description: dotnet pack projects at the given SemVer 2.0 version only.
+
+inputs:
+  projects:
+    description: Newline list of .csproj paths to pack.
+    required: true
+  version:
+    description: Package version, SemVer 2.0 without leading "v", e.g. 1.2.3-rc.1.
+    required: true
+  output-dir:
+    description: Directory for .nupkg files. Must not already contain .nupkg files.
+    required: false
+    default: artifacts/nuget
+  configuration:
+    description: Build configuration.
+    required: false
+    default: Release
+
+outputs:
+  packages:
+    description: Newline list of absolute .nupkg paths (no .snupkg).
+    value: ${{ steps.pack.outputs.packages }}
+  package-count:
+    description: Number of .nupkg files produced.
+    value: ${{ steps.pack.outputs.package-count }}
+  output-dir:
+    description: Absolute path of the output directory.
+    value: ${{ steps.pack.outputs.output-dir }}
+
+runs:
+  using: composite
+  steps:
+    - id: pack
+      shell: bash
+      env:
+        PROJECTS: ${{ inputs.projects }}
+        VERSION: ${{ inputs.version }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        CONFIGURATION: ${{ inputs.configuration }}
+      run: bash "$GITHUB_ACTION_PATH/nuget-pack.sh"
