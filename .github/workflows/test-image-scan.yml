@@ -40,7 +40,9 @@ jobs:
           set -euo pipefail
           echo "image=ghcr.io/${OWNER,,}/pernix-ci-selftest-image-scan-${RUN_ID}-${RUN_ATTEMPT}" >>"$GITHUB_OUTPUT"
           # D9: random, non-functional body. Prefix and body stay separate in the repo.
-          body=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 36)
+          # Bounded producer: head reads a fixed 512 bytes, so no stage is killed by SIGPIPE.
+          body=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-36)
+          [[ ${#body} -eq 36 ]] || { echo "::error::secret body length ${#body}, expected 36"; exit 1; }
           echo "::add-mask::${body}"
           echo "::add-mask::ghp_${body}"
           echo "secret-body=${body}" >>"$GITHUB_OUTPUT"
@@ -146,7 +148,7 @@ jobs:
           pkg="pernix-ci-selftest-image-scan-${RUN_ID}-${RUN_ATTEMPT}"
           kind=$(gh api "/users/${OWNER}" --jq .type)
           if [[ "$kind" == "Organization" ]]; then base="/orgs/${OWNER}"; else base="/users/${OWNER}"; fi
-          status=$(gh api -X DELETE "${base}/packages/container/${pkg}" --include 2>/dev/null | head -1 | awk '{print $2}') || true
+          status=$(gh api -X DELETE "${base}/packages/container/${pkg}" --include 2>/dev/null | awk 'NR==1{print $2}') || true
           case "$status" in
             204) echo "Deleted package ${pkg}" ;;
             404) echo "::notice::Package ${pkg} not found, nothing to delete" ;;
