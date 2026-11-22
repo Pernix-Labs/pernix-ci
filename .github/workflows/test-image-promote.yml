@@ -1,0 +1,255 @@
+name: test-image-promote
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: echo "::notice::Fork PR without packages:write. image-promote registry self-test skipped."
+
+  test:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - id: names
+        name: Compute per-run names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          pkg="pernix-ci-selftest-image-promote-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "owner=${owner}"
+            echo "pkg=${pkg}"
+            echo "image=ghcr.io/${owner}/${pkg}"
+            echo "source-tag=sha-${GITHUB_SHA}"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - id: seed
+        name: Seed source, conflict and multi-arch index images
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          SOURCE_TAG: ${{ steps.names.outputs.source-tag }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          ctx=tests/fixtures/image-promote
+          digest_of() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest; }
+          docker buildx build --push --provenance=false --sbom=false -t "${IMAGE}:${SOURCE_TAG}" "$ctx"
+          # Same content, different label -> different digest on the conflict tag.
+          docker buildx build --push --provenance=false --sbom=false --label selftest.variant=conflict -t "${IMAGE}:conflict" "$ctx"
+          docker buildx build --provenance=false --sbom=false --platform linux/amd64,linux/arm64 \
+            --output "type=image,name=${IMAGE}:index-src,push=true,oci-mediatypes=true" "$ctx"
+          {
+            echo "source=$(digest_of "${IMAGE}:${SOURCE_TAG}")"
+            echo "conflict=$(digest_of "${IMAGE}:conflict")"
+            echo "index=$(digest_of "${IMAGE}:index-src")"
+          } >>"$GITHUB_OUTPUT"
+
+      - id: promote
+        name: Promote source -> 1.2.3, v1.2.3
+        uses: ./actions/image-promote
+        with:
+          image: ${{ steps.names.outputs.image }}
+          source-tag: ${{ steps.names.outputs.source-tag }}
+          tags: |
+            1.2.3
+            v1.2.3
+
+      - name: Assert promoted tags share source digest
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          DIGEST: ${{ steps.promote.outputs.digest }}
+          TAGS: ${{ steps.promote.outputs.tags }}
+          EXPECTED: ${{ steps.seed.outputs.source }}
+        run: |
+          [[ "$DIGEST" == "$EXPECTED" ]] || { echo "::error::output digest '${DIGEST}' != source '${EXPECTED}'"; exit 1; }
+          [[ "$TAGS" == $'1.2.3\nv1.2.3' ]] || { echo "::error::unexpected tags output '${TAGS}'"; exit 1; }
+          for t in 1.2.3 v1.2.3; do
+            got="$(docker buildx imagetools inspect "${IMAGE}:${t}" --format '{{json .Manifest}}' | jq -r .digest)"
+            [[ "$got" == "$EXPECTED" ]] || { echo "::error::${t} digest '${got}' != source '${EXPECTED}'"; exit 1; }
+          done
+
+      - id: rerun
+        name: Re-run promote (idempotent)
+        uses: ./actions/image-promote
+        with:
+          image: ${{ steps.names.outputs.image }}
+          source-tag: ${{ steps.names.outputs.source-tag }}
+          tags: |
+            1.2.3
+            v1.2.3
+
+      - name: Assert re-run kept digest
+        env:
+          DIGEST: ${{ steps.rerun.outputs.digest }}
+          EXPECTED: ${{ steps.seed.outputs.source }}
+        run: |
+          [[ "$DIGEST" == "$EXPECTED" ]] || { echo "::error::re-run digest '${DIGEST}' != source '${EXPECTED}'"; exit 1; }
+
+      - id: conflict
+        name: Conflicting tag without allow-overwrite must fail
+        continue-on-error: true
+        uses: ./actions/image-promote
+        with:
+          image: ${{ steps.names.outputs.image }}
+          source-tag: ${{ steps.names.outputs.source-tag }}
+          tags: |
+            fresh-before-conflict
+            conflict
+
+      - name: Assert conflict failed before any write
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          OUTCOME: ${{ steps.conflict.outcome }}
+          CONFLICT: ${{ steps.seed.outputs.conflict }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure on conflicting tag, got '${OUTCOME}'"; exit 1; }
+          got="$(docker buildx imagetools inspect "${IMAGE}:conflict" --format '{{json .Manifest}}' | jq -r .digest)"
+          [[ "$got" == "$CONFLICT" ]] || { echo "::error::conflict tag moved to '${got}'"; exit 1; }
+          if docker buildx imagetools inspect "${IMAGE}:fresh-before-conflict" >/dev/null 2>&1; then
+            echo "::error::fresh-before-conflict was created although the run failed"; exit 1
+          fi
+
+      - id: overwrite
+        name: Conflicting tag with allow-overwrite
+        uses: ./actions/image-promote
+        with:
+          image: ${{ steps.names.outputs.image }}
+          source-tag: ${{ steps.names.outputs.source-tag }}
+          tags: conflict
+          allow-overwrite: 'true'
+
+      - name: Assert overwrite moved tag to source digest
+        env:
+          DIGEST: ${{ steps.overwrite.outputs.digest }}
+          EXPECTED: ${{ steps.seed.outputs.source }}
+        run: |
+          [[ "$DIGEST" == "$EXPECTED" ]] || { echo "::error::overwrite digest '${DIGEST}' != source '${EXPECTED}'"; exit 1; }
+
+      - id: missing
+        name: Missing source must fail
+        continue-on-error: true
+        uses: ./actions/image-promote
+        with:
+          image: ${{ steps.names.outputs.image }}
+          source-tag: absent-source
+          tags: from-missing
+
+      - name: Assert missing source failed without creating tags
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          OUTCOME: ${{ steps.missing.outcome }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure on missing source, got '${OUTCOME}'"; exit 1; }
+          if docker buildx imagetools inspect "${IMAGE}:from-missing" >/dev/null 2>&1; then
+            echo "::error::from-missing was created from a missing source"; exit 1
+          fi
+
+      - id: bad-tag
+        name: Invalid target tag must fail
+        continue-on-error: true
+        uses: ./actions/image-promote
+        with:
+          image: ${{ steps.names.outputs.image }}
+          source-tag: ${{ steps.names.outputs.source-tag }}
+          tags: -invalid
+
+      - name: Assert invalid tag failed
+        env:
+          OUTCOME: ${{ steps.bad-tag.outcome }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure on invalid tag, got '${OUTCOME}'"; exit 1; }
+
+      - id: index
+        name: Promote multi-arch index
+        uses: ./actions/image-promote
+        with:
+          image: ${{ steps.names.outputs.image }}
+          source-tag: index-src
+          tags: 2.0.0
+
+      - name: Assert index promoted byte-identically
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          DIGEST: ${{ steps.index.outputs.digest }}
+          EXPECTED: ${{ steps.seed.outputs.index }}
+        run: |
+          [[ "$DIGEST" == "$EXPECTED" ]] || { echo "::error::index digest '${DIGEST}' != source '${EXPECTED}'"; exit 1; }
+          got="$(docker buildx imagetools inspect "${IMAGE}:2.0.0" --format '{{json .Manifest}}' | jq -r .digest)"
+          [[ "$got" == "$EXPECTED" ]] || { echo "::error::2.0.0 digest '${got}' != source '${EXPECTED}'"; exit 1; }
+          media="$(docker buildx imagetools inspect "${IMAGE}:2.0.0" --raw | jq -r .mediaType)"
+          [[ "$media" == "application/vnd.oci.image.index.v1+json" ]] || { echo "::error::2.0.0 mediaType '${media}' is not an OCI index"; exit 1; }
+
+      - name: Cleanup selftest package
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ steps.names.outputs.owner }}
+          PKG: ${{ steps.names.outputs.pkg }}
+        run: |
+          [[ -n "$PKG" ]] || exit 0
+          if [[ "$(gh api "users/${OWNER}" --jq .type)" == "Organization" ]]; then
+            base="orgs/${OWNER}"
+          else
+            base="users/${OWNER}"
+          fi
+          if ! out="$(gh api -X DELETE "${base}/packages/container/${PKG}" 2>&1)"; then
+            if grep -q 'HTTP 404' <<<"$out"; then
+              echo "::notice::package ${PKG} not found, nothing to delete"
+            else
+              echo "::error::cleanup of ${PKG} failed: ${out}"
+              exit 1
+            fi
+          fi
+
+  leftover-check:
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Skip leftover check on fork PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: echo "::notice::Fork PR created no packages. image-promote leftover package check skipped."
+
+      - name: Assert no per-run selftest package remains
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          names=("pernix-ci-selftest-image-promote-${RUN_ID}-${RUN_ATTEMPT}")
+          kind="$(gh api "/users/${owner}" --jq .type)"
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
+          out="$(mktemp)"
+          failed=0
+          for name in "${names[@]}"; do
+            enc="$(jq -rn --arg n "$name" '$n|@uri')"
+            gh api -i "${base}/packages/container/${enc}" >"$out" 2>/dev/null || true
+            status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+            case "$status" in
+              404) echo "::notice::Selftest package ${name} absent" ;;
+              200) echo "::error::Selftest package ${name} left behind after run ${RUN_ID} attempt ${RUN_ATTEMPT}"; failed=1 ;;
+              *) echo "::error::Leftover lookup for ${name} returned HTTP ${status:-unknown}, cannot confirm cleanup"; failed=1 ;;
+            esac
+          done
+          exit "$failed"

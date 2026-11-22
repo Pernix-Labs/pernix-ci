@@ -1,0 +1,194 @@
+name: test-image-scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-image-scan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip registry tests on fork PR
+        run: echo "::notice::Fork PR has no packages:write. image-scan registry tests skipped."
+
+  scan:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Compute per-run image name and secret fragments
+        id: name
+        env:
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          echo "image=ghcr.io/${OWNER,,}/pernix-ci-selftest-image-scan-${RUN_ID}-${RUN_ATTEMPT}" >>"$GITHUB_OUTPUT"
+          # D9: random, non-functional body. Prefix and body stay separate in the repo.
+          # Bounded producer: head reads a fixed 512 bytes, so no stage is killed by SIGPIPE.
+          body=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-36)
+          [[ ${#body} -eq 36 ]] || { echo "::error::secret body length ${#body}, expected 36"; exit 1; }
+          echo "::add-mask::${body}"
+          echo "::add-mask::ghp_${body}"
+          echo "secret-body=${body}" >>"$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USERNAME" --password-stdin
+
+      - name: Seed fixture images
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          SECRET_BODY: ${{ steps.name.outputs.secret-body }}
+        run: |
+          set -euo pipefail
+          docker buildx build --push --platform linux/amd64 --provenance=false --sbom=false \
+            -t "${IMAGE}:clean" tests/fixtures/image-scan/clean
+          docker buildx build --push --platform linux/amd64 --provenance=false --sbom=false \
+            -t "${IMAGE}:vulnerable" tests/fixtures/image-scan/vulnerable
+          docker buildx build --push --platform linux/amd64 --provenance=false --sbom=false \
+            --build-arg SECRET_PREFIX=ghp --build-arg SECRET_BODY \
+            -t "${IMAGE}:secret" tests/fixtures/image-scan/secret
+
+      - name: Non-ghcr image-ref fails before side effects
+        id: bad-ref
+        continue-on-error: true
+        uses: ./actions/image-scan
+        with:
+          image-ref: docker.io/library/alpine:3.10.0
+
+      - name: Scan clean fixture
+        id: clean
+        uses: ./actions/image-scan
+        with:
+          image-ref: ${{ steps.name.outputs.image }}:clean
+
+      - name: Scan vulnerable fixture
+        id: vulnerable
+        continue-on-error: true
+        uses: ./actions/image-scan
+        with:
+          image-ref: ${{ steps.name.outputs.image }}:vulnerable
+
+      - name: Scan secret fixture
+        id: secret
+        continue-on-error: true
+        uses: ./actions/image-scan
+        with:
+          image-ref: ${{ steps.name.outputs.image }}:secret
+
+      - name: Assert results
+        env:
+          BAD_REF_OUTCOME: ${{ steps.bad-ref.outcome }}
+          CLEAN_RESULT: ${{ steps.clean.outputs.result }}
+          CLEAN_SECRETS: ${{ steps.clean.outputs.secret-count }}
+          VULN_OUTCOME: ${{ steps.vulnerable.outcome }}
+          VULN_HIGH: ${{ steps.vulnerable.outputs.high-count }}
+          VULN_CRITICAL: ${{ steps.vulnerable.outputs.critical-count }}
+          SECRET_OUTCOME: ${{ steps.secret.outcome }}
+          SECRET_COUNT: ${{ steps.secret.outputs.secret-count }}
+          SECRET_SARIF: ${{ steps.secret.outputs.sarif-file }}
+          SECRET_BODY: ${{ steps.name.outputs.secret-body }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$BAD_REF_OUTCOME" == "failure" ]] || fail "non-ghcr image-ref: expected failure, got '$BAD_REF_OUTCOME'"
+          [[ "$CLEAN_RESULT" == "pass" ]] || fail "clean: expected result=pass, got '$CLEAN_RESULT'"
+          [[ "$CLEAN_SECRETS" == "0" ]] || fail "clean: expected secret-count=0, got '$CLEAN_SECRETS'"
+          [[ "$VULN_OUTCOME" == "failure" ]] || fail "vulnerable: expected failure, got '$VULN_OUTCOME'"
+          (( ${VULN_HIGH:-0} + ${VULN_CRITICAL:-0} > 0 )) ||
+            fail "vulnerable: expected high-count+critical-count>0, got high='$VULN_HIGH' critical='$VULN_CRITICAL'"
+          [[ "$SECRET_OUTCOME" == "failure" ]] || fail "secret: expected failure, got '$SECRET_OUTCOME'"
+          (( ${SECRET_COUNT:-0} > 0 )) || fail "secret: expected secret-count>0, got '$SECRET_COUNT'"
+
+          # Secret value (and its random body) must not appear in SARIF or summary.
+          [[ -s "$SECRET_SARIF" ]] || fail "secret: sarif-file '$SECRET_SARIF' missing or empty"
+          summary="$(dirname "$SECRET_SARIF")/summary.md"
+          [[ -s "$summary" ]] || fail "secret: summary file '$summary' missing or empty"
+          for f in "$SECRET_SARIF" "$summary"; do
+            if grep -qF -e "$SECRET_BODY" "$f"; then
+              fail "secret value found in $(basename "$f")"
+            fi
+          done
+          grep -qF 'github-pat' "$summary" || fail "secret: summary lacks rule ID github-pat"
+          echo "All image-scan assertions passed"
+
+  cleanup:
+    needs: [scan]
+    if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete per-run package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          pkg="pernix-ci-selftest-image-scan-${RUN_ID}-${RUN_ATTEMPT}"
+          kind=$(gh api "/users/${OWNER}" --jq .type)
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${OWNER}"; else base="/users/${OWNER}"; fi
+          status=$(gh api -X DELETE "${base}/packages/container/${pkg}" --include 2>/dev/null | awk 'NR==1{print $2}') || true
+          case "$status" in
+            204) echo "Deleted package ${pkg}" ;;
+            404) echo "::notice::Package ${pkg} not found, nothing to delete" ;;
+            *) echo "::error::Failed to delete package ${pkg} (HTTP ${status:-unknown})"; exit 1 ;;
+          esac
+
+  leftover-check:
+    needs: [scan, cleanup]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Skip leftover check on fork PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: echo "::notice::Fork PR created no packages. image-scan leftover package check skipped."
+
+      - name: Assert no per-run selftest package remains
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          names=("pernix-ci-selftest-image-scan-${RUN_ID}-${RUN_ATTEMPT}")
+          kind="$(gh api "/users/${owner}" --jq .type)"
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
+          out="$(mktemp)"
+          failed=0
+          for name in "${names[@]}"; do
+            enc="$(jq -rn --arg n "$name" '$n|@uri')"
+            gh api -i "${base}/packages/container/${enc}" >"$out" 2>/dev/null || true
+            status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+            case "$status" in
+              404) echo "::notice::Selftest package ${name} absent" ;;
+              200) echo "::error::Selftest package ${name} left behind after run ${RUN_ID} attempt ${RUN_ATTEMPT}"; failed=1 ;;
+              *) echo "::error::Leftover lookup for ${name} returned HTTP ${status:-unknown}, cannot confirm cleanup"; failed=1 ;;
+            esac
+          done
+          exit "$failed"

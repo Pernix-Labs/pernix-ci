@@ -1,0 +1,6 @@
+<Project>
+  <!-- Deliberately wrong version: nuget-pack self-test proves the input version overrides it. -->
+  <PropertyGroup>
+    <Version>9.9.9</Version>
+  </PropertyGroup>
+</Project>
