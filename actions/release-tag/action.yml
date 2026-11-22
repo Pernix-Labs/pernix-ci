@@ -1,0 +1,49 @@
+name: release-tag
+description: Parse a release tag into unit, version, prerelease flag and commit, and check the commit is reachable from the default branch.
+
+inputs:
+  tag:
+    description: Release tag, `<unit>/vX.Y.Z[-pre]`, or `vX.Y.Z[-pre]` when exactly one unit is declared.
+    required: true
+  unit-names:
+    description: Newline-separated unit names (`release-units` output `unit-names`).
+    required: true
+  default-branch:
+    description: Branch the commit must be reachable from, as `origin/<default-branch>`.
+    required: false
+    default: ${{ github.event.repository.default_branch }}
+  commit:
+    description: Self-test only. 40-hex commit used instead of resolving the tag. Callers leave empty.
+    required: false
+    default: ""
+  working-directory:
+    description: Directory inside the git checkout.
+    required: false
+    default: .
+
+outputs:
+  unit:
+    description: Unit name.
+    value: ${{ steps.parse.outputs.unit }}
+  version:
+    description: Version without the `v` prefix.
+    value: ${{ steps.parse.outputs.version }}
+  prerelease:
+    description: "`true` when the version has a prerelease part, else `false`."
+    value: ${{ steps.parse.outputs.prerelease }}
+  commit:
+    description: Tagged commit, 40 hex.
+    value: ${{ steps.parse.outputs.commit }}
+
+runs:
+  using: composite
+  steps:
+    - id: parse
+      shell: bash
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_UNIT_NAMES: ${{ inputs.unit-names }}
+        INPUT_DEFAULT_BRANCH: ${{ inputs.default-branch }}
+        INPUT_COMMIT: ${{ inputs.commit }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: '"$GITHUB_ACTION_PATH/release-tag.sh"'

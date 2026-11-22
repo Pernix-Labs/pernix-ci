@@ -1,0 +1,136 @@
+name: test-release-tag
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit tests (release-tag)
+        run: python3 -I -m unittest discover -s tests/unit/release-tag -v
+
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Bare origin + clone. main: c1 (annotated svc/v1.2.3), c2 (lightweight
+      # lib/v1.0.0-rc.1). Orphan commit tagged svc/v9.9.9.
+      - id: repo
+        name: Script temp repo
+        run: tests/unit/release-tag/selftest.sh init "$RUNNER_TEMP/rt"
+
+      - id: annotated
+        uses: ./actions/release-tag
+        with:
+          tag: svc/v1.2.3
+          unit-names: |
+            svc
+            lib
+          default-branch: main
+          working-directory: ${{ runner.temp }}/rt/repo
+      - id: lightweight
+        uses: ./actions/release-tag
+        with:
+          tag: lib/v1.0.0-rc.1
+          unit-names: |
+            svc
+            lib
+          default-branch: main
+          working-directory: ${{ runner.temp }}/rt/repo
+      - id: override
+        uses: ./actions/release-tag
+        with:
+          tag: svc/v0.0.1-selftest.${{ github.run_id }}
+          unit-names: svc
+          default-branch: main
+          commit: ${{ steps.repo.outputs.c2 }}
+          working-directory: ${{ runner.temp }}/rt/repo
+      - name: Assert valid cases
+        env:
+          C1: ${{ steps.repo.outputs.c1 }}
+          C2: ${{ steps.repo.outputs.c2 }}
+          GOT: >-
+            ${{ steps.annotated.outputs.unit }} ${{ steps.annotated.outputs.version }}
+            ${{ steps.annotated.outputs.prerelease }} ${{ steps.annotated.outputs.commit }}
+            ${{ steps.lightweight.outputs.unit }} ${{ steps.lightweight.outputs.version }}
+            ${{ steps.lightweight.outputs.prerelease }} ${{ steps.lightweight.outputs.commit }}
+            ${{ steps.override.outputs.unit }} ${{ steps.override.outputs.version }}
+            ${{ steps.override.outputs.prerelease }} ${{ steps.override.outputs.commit }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          want="svc 1.2.3 false $C1 lib 1.0.0-rc.1 true $C2 svc 0.0.1-selftest.$RUN_ID true $C2"
+          [[ "$GOT" == "$want" ]] || { echo "::error::expected '$want', got '$GOT'"; exit 1; }
+
+      - id: unreachable
+        continue-on-error: true
+        uses: ./actions/release-tag
+        with:
+          tag: svc/v9.9.9
+          unit-names: |
+            svc
+            lib
+          default-branch: main
+          working-directory: ${{ runner.temp }}/rt/repo
+      - id: conflict
+        continue-on-error: true
+        uses: ./actions/release-tag
+        with:
+          tag: svc/v1.2.3
+          unit-names: |
+            svc
+            lib
+          default-branch: main
+          commit: ${{ steps.repo.outputs.c2 }}
+          working-directory: ${{ runner.temp }}/rt/repo
+      - id: unknown-unit
+        continue-on-error: true
+        uses: ./actions/release-tag
+        with:
+          tag: api/v1.2.3
+          unit-names: |
+            svc
+            lib
+          default-branch: main
+          working-directory: ${{ runner.temp }}/rt/repo
+      - id: bare-multi
+        continue-on-error: true
+        uses: ./actions/release-tag
+        with:
+          tag: v1.2.3
+          unit-names: |
+            svc
+            lib
+          default-branch: main
+          commit: ${{ steps.repo.outputs.c1 }}
+          working-directory: ${{ runner.temp }}/rt/repo
+      - id: build-metadata
+        continue-on-error: true
+        uses: ./actions/release-tag
+        with:
+          tag: svc/v1.2.3+build.1
+          unit-names: svc
+          default-branch: main
+          working-directory: ${{ runner.temp }}/rt/repo
+      - name: Assert invalid cases fail
+        env:
+          GOT: >-
+            ${{ steps.unreachable.outcome }} ${{ steps.conflict.outcome }}
+            ${{ steps.unknown-unit.outcome }} ${{ steps.bare-multi.outcome }}
+            ${{ steps.build-metadata.outcome }}
+        run: |
+          set -euo pipefail
+          want="failure failure failure failure failure"
+          [[ "$GOT" == "$want" ]] || { echo "::error::expected '$want', got '$GOT'"; exit 1; }
