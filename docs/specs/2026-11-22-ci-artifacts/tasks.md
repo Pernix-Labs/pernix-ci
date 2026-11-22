@@ -21,7 +21,7 @@ Shared rules for every task (read before starting):
 - Local verify before done: `shellcheck actions/<block>/*.sh` and `actionlint .github/workflows/test-<block>.yml` clean. CI self-test run is task 9.
 - Commit your files on your worktree branch with a message naming the block. No co-author lines.
 
-- [ ] 1 image-exists block
+- [x] 1 image-exists block
   - Files: actions/image-exists/action.yml, actions/image-exists/image-exists.sh, actions/image-exists/README.md, .github/workflows/test-image-exists.yml, tests/fixtures/image-exists/Dockerfile
   - Agent: any
   - Verify: shellcheck actions/image-exists/*.sh && actionlint .github/workflows/test-image-exists.yml clean; outputs and 403 fallback match design D13
@@ -34,7 +34,7 @@ Shared rules for every task (read before starting):
   - Self-test asserts: `true` + digest after seed push (plain `docker buildx build --push`); `false` for random tag in existing package; `false` + empty digest for never-created package `pernix-ci-selftest-image-exists-<run_id>-missing`; failure on non-ghcr image (`continue-on-error` + outcome check). Permissions: `packages: write` (seed/cleanup), `contents: read`.
   - README: permission `packages: read`; D13 behavior.
 
-- [ ] 2 image-build-push block
+- [x] 2 image-build-push block
   - Files: actions/image-build-push/action.yml, actions/image-build-push/image-build-push.sh, actions/image-build-push/README.md, .github/workflows/test-image-build-push.yml, tests/fixtures/image-build-push/Dockerfile, tests/fixtures/image-build-push/app.txt
   - Agent: any
   - Verify: shellcheck actions/image-build-push/*.sh && actionlint .github/workflows/test-image-build-push.yml clean; tag/labels/build-args/cache match R3 and design
@@ -46,7 +46,7 @@ Shared rules for every task (read before starting):
   - Self-test asserts: tag `sha-${{ github.sha }}`; labels via `docker buildx imagetools inspect --raw` on config blob; `/build-info` content; second build run shows cache hit (log or timing marker). Cleanup package.
   - README: permissions `packages: write`, `contents: read`; D12 docker config note.
 
-- [ ] 3 image-scan block
+- [x] 3 image-scan block
   - Files: actions/image-scan/action.yml, actions/image-scan/image-scan.sh, actions/image-scan/README.md, .github/workflows/test-image-scan.yml, tests/fixtures/image-scan/clean/Dockerfile, tests/fixtures/image-scan/clean/app.txt, tests/fixtures/image-scan/vulnerable/Dockerfile, tests/fixtures/image-scan/secret/Dockerfile
   - Agent: any
   - Verify: shellcheck actions/image-scan/*.sh && actionlint .github/workflows/test-image-scan.yml clean; fail rule, secret stripping, outputs match R4 and design D3/D5/D9
@@ -57,7 +57,7 @@ Shared rules for every task (read before starting):
   - Fixtures: clean = scratch + file; vulnerable = old base pinned by digest with known HIGH/CRITICAL CVEs; secret = busybox-based, secret-pattern string (GitHub PAT format) assembled at build time from split build-arg fragments passed by workflow, so no matching literal in repo (D9).
   - Self-test asserts: clean → `result=pass`; vulnerable → step failure + `high-count+critical-count>0`; secret → failure + `secret-count>0`; grep SARIF + summary file for secret value → absent. Permissions: `packages: write`, `contents: read`. Never `upload-sarif` in self-test.
 
-- [ ] 4 image-promote block
+- [x] 4 image-promote block
   - Files: actions/image-promote/action.yml, actions/image-promote/image-promote.sh, actions/image-promote/README.md, .github/workflows/test-image-promote.yml, tests/fixtures/image-promote/Dockerfile, tests/fixtures/image-promote/app.txt
   - Agent: any
   - Verify: shellcheck actions/image-promote/*.sh && actionlint .github/workflows/test-image-promote.yml clean; raw manifest copy preserves digest incl. multi-arch index
@@ -68,7 +68,7 @@ Shared rules for every task (read before starting):
   - Fixture: scratch + `COPY` only (no `RUN`, so multi-platform builds need no QEMU).
   - Self-test asserts: promote `sha-x` → `1.2.3`, `v1.2.3`, equal digests; re-run idempotent; conflicting tag fails without `allow-overwrite`; missing source fails; index built `--platform linux/amd64,linux/arm64` promotes with equal digest and OCI index `mediaType`. Cleanup package.
 
-- [ ] 5 image-retention block
+- [x] 5 image-retention block
   - Files: actions/image-retention/action.yml, actions/image-retention/image-retention.sh, actions/image-retention/README.md, .github/workflows/test-image-retention.yml, tests/fixtures/image-retention/Dockerfile
   - Agent: any
   - Verify: shellcheck actions/image-retention/*.sh && actionlint .github/workflows/test-image-retention.yml clean; classification, keep/age rules, child protection, last-version guard, D14 message match R6 and design
@@ -81,7 +81,7 @@ Shared rules for every task (read before starting):
   - Self-test asserts: seed 7 stable, 2 prerelease, 3 sha-only in per-run package; `dry-run=true`, `reference-time`=now+30d → plan deletes 2 oldest stable, both prerelease, sha-only subject to guards, prerelease not counted in keep-5; real-delete run → `deleted-count` matches plan; `image-retention.sh remediation-message` for org and user → expected URL + "Manage Actions access" text. Cleanup package.
   - README: Admin precondition, "Manage Actions access" steps, R5 created_at note, `reference-time` purpose.
 
-- [ ] 6 nuget-pack block
+- [x] 6 nuget-pack block
   - Files: actions/nuget-pack/action.yml, actions/nuget-pack/nuget-pack.sh, actions/nuget-pack/README.md, .github/workflows/test-nuget-pack.yml, tests/fixtures/nuget-pack/Directory.Build.props, tests/fixtures/nuget-pack/Fixture.Lib/Fixture.Lib.csproj, tests/fixtures/nuget-pack/Fixture.Lib/Class1.cs
   - Agent: any
   - Verify: shellcheck actions/nuget-pack/*.sh && actionlint .github/workflows/test-nuget-pack.yml clean; local run of nuget-pack.sh on fixture with dotnet produces 1.2.3-rc.1 package
@@ -93,7 +93,7 @@ Shared rules for every task (read before starting):
   - Self-test (uses `actions/setup-dotnet` 8.0.x): version `1.2.3-rc.1` → package version matches, `package-count=1`; `v1.2.3` fails; non-empty output-dir fails. Permissions `contents: read`.
   - README: caller must set up SDK.
 
-- [ ] 7 nuget-push block
+- [x] 7 nuget-push block
   - Files: actions/nuget-push/action.yml, actions/nuget-push/nuget-push.sh, actions/nuget-push/README.md, .github/workflows/test-nuget-push.yml, tests/fixtures/nuget-push/Fixture.Push/Fixture.Push.csproj, tests/fixtures/nuget-push/Fixture.Push/Class1.cs
   - Agent: any
   - Verify: shellcheck actions/nuget-push/*.sh && actionlint .github/workflows/test-nuget-push.yml clean; no API key input; dry-run path never contacts nuget.org
@@ -104,7 +104,7 @@ Shared rules for every task (read before starting):
   - Self-test: plain `dotnet pack` fixture (setup-dotnet 8.0.x) → `dry-run=true` → package in local feed, `pushed-count=1`; re-push with `skip-duplicate` succeeds; zero-match glob fails. Job `permissions: contents: read` only, no `id-token: write`.
   - README MUST state: composite action, runs inside caller job, NOT a reusable workflow, because nuget.org Trusted Publishing policy matches caller repo workflow file (`cd.yml`) and environment (`release`). Example job with `environment: release`, `permissions: id-token: write, contents: read`. Troubleshooting: policy fields. No API key ever.
 
-- [ ] 8 Cross-block consistency audit
+- [x] 8 Cross-block consistency audit
   - Deps: 1, 2, 3, 4, 5, 6, 7
   - Files: actions/image-exists/action.yml, actions/image-build-push/action.yml, actions/image-scan/action.yml, actions/image-promote/action.yml, actions/image-retention/action.yml, actions/nuget-pack/action.yml, actions/nuget-push/action.yml, actions/image-exists/README.md, actions/image-build-push/README.md, actions/image-scan/README.md, actions/image-promote/README.md, actions/image-retention/README.md, actions/nuget-pack/README.md, actions/nuget-push/README.md, .github/workflows/test-image-exists.yml, .github/workflows/test-image-build-push.yml, .github/workflows/test-image-scan.yml, .github/workflows/test-image-promote.yml, .github/workflows/test-image-retention.yml, .github/workflows/test-nuget-pack.yml, .github/workflows/test-nuget-push.yml
   - Agent: any
@@ -112,7 +112,7 @@ Shared rules for every task (read before starting):
   - Purpose: align merged blocks with shared conventions (R1, G1, G5, G6).
   - Checks + minimal fixes: one SHA per third-party action across all files; kebab-case names; `registry-token`/`registry-username` defaults identical on image blocks; no `${{ }}` in `run:` bodies; every README has purpose, inputs, outputs, permissions, example; outputs match design "Block output contract". Do not change block logic; report anything beyond conventions to coordinator.
 
-- [ ] 9 CI self-test run on PR branch
+- [x] 9 CI self-test run on PR branch
   - Deps: 8
   - Files: none
   - Agent: any
