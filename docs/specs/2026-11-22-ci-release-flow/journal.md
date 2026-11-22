@@ -66,3 +66,9 @@ run: run_db1582f36196
 - 2026-11-22T21:15:58Z worker_done — coord 13, sha 9d73733, ADRs + README; actionlint note in README Development
 - 2026-11-22T21:15:58Z verify-minted — coord 13 round 1, task task_34efb1106aaf
 - 2026-11-22T21:16:43Z verdict — coord 13 APPROVE
+- 2026-11-22T21:17:22Z note — C pushed branch and opened draft PR #3 (worker terminal denied push); coord 14 watches runs
+- 2026-11-22T21:24:24Z worker_done — coord 14, sha c46a7bb, 21 workflows green on PR #3; leftover-check 404 for all selftest packages
+- 2026-11-22T21:24:24Z verify-minted — coord 14 round 1, task task_6d6ca39e99a9
+- 2026-11-22T21:27:11Z verdict — coord 14 APPROVE
+- 2026-11-22T21:27:25Z note — all 14 coords approved; closeout worker task_709a677fb750 started
+- 2026-11-22T21:28:53Z closeout — closeout worker 93e0e87 (ADR 0008 cite, ADR 0012 PR #3 evidence); design.md as-built note waived (frozen; deviations in ADR 0008/README/journal)

@@ -1,9 +1,9 @@
 ---
 status: approved
 createdAt: 2026-11-22T20:37:49Z
-updatedAt: 2026-11-22T20:41:10Z
+updatedAt: 2026-11-22T21:28:53Z
 approvedAt: 2026-11-22T20:41:10Z
-completedAt: null
+completedAt: 2026-11-22T21:28:53Z
 ---
 
 # Tasks: P6 ci-release-flow — tag-based CI/CD for .NET mono-repos
