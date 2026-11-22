@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Fixture.Lib</PackageId>
+    <Authors>pernix-ci</Authors>
+    <Description>pernix-ci release-flow fixture library.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Shared/Shared.csproj" />
+  </ItemGroup>
+</Project>
