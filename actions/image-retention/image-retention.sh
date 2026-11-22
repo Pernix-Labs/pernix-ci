@@ -238,6 +238,14 @@ for PKG in "${packages[@]}"; do
         end)' "$WORK/pages.json" >"$PLAN"
   total="$(jq 'length' "$PLAN")"
 
+  # --- last-version guard: the API rejects deleting a package's last version ---
+  # Runs before child protection so the children of the version it keeps are protected too.
+  if [[ "$total" -gt 0 && "$(jq '[.[] | select(.action == "delete")] | length' "$PLAN")" -eq "$total" ]]; then
+    id="$(jq -r '.[0].id' "$PLAN")"
+    set_field "$id" '.action = "keep" | .reason = "last-version"'
+    echo "::notice::image-retention: every version of ${PKG} expired; keeping newest version ${id} (GitHub rejects deleting a package's last version)"
+  fi
+
   # --- child protection (R6.6): children of retained indexes are never deleted ---
   if [[ "$(jq '[.[] | select(.action == "delete")] | length' "$PLAN")" -gt 0 ]]; then
     repo_path="${OWNER_LC}/${PKG}"
@@ -268,13 +276,6 @@ for PKG in "${packages[@]}"; do
         done < <(jq -r '(.manifests // [])[] | .digest // empty' "$WORK/manifest" 2>/dev/null || true)
       done <<<"$pending"
     done
-  fi
-
-  # --- last-version guard: the API rejects deleting a package's last version ---
-  if [[ "$total" -gt 0 && "$(jq '[.[] | select(.action == "delete")] | length' "$PLAN")" -eq "$total" ]]; then
-    id="$(jq -r '.[0].id' "$PLAN")"
-    set_field "$id" '.action = "keep" | .reason = "last-version"'
-    echo "::notice::image-retention: every version of ${PKG} expired; keeping newest version ${id} (GitHub rejects deleting a package's last version)"
   fi
 
   # Initial result column: planned outcome.

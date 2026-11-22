@@ -59,8 +59,8 @@ permissions:
 2. Lists all versions of each package (`gh api --paginate`).
 3. Classifies each version on its tags. Stable if any tag matches `stable-tag-pattern`, else prerelease if any tag matches `prerelease-tag-pattern`, else sha-only (sha tags or untagged).
 4. Marks deletions. Stable: everything beyond the newest `keep-versions` by `created_at`. Prerelease: older than `prerelease-max-age-days`. Sha-only: older than `max-age-days`. Age is `reference-time - created_at`.
-5. Child protection: for every retained version, `GET`s its manifest from the registry. If it is an index, every `manifests[].digest` (platform images, attestations) is kept too.
-6. Last-version guard: GitHub rejects deleting a package's last version. If every version is marked, the newest is kept with a notice.
+5. Last-version guard: GitHub rejects deleting a package's last version. If every version is marked, the newest is kept with a notice.
+6. Child protection: for every retained version (including one kept by the guard), `GET`s its manifest from the registry. If it is an index, every `manifests[].digest` (platform images, attestations) is kept too.
 7. Unless `dry-run`, re-reads each marked version, re-classifies it, and skips it with a notice if its class changed since listing (for example promoted meanwhile). Then `DELETE`s it.
 8. Writes a table per package to the step summary: result, class, tags, age, reason, version id.
 
