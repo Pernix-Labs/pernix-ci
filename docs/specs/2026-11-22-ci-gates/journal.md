@@ -50,3 +50,5 @@ run: run_a8b3941a3577
 - 2026-11-22T20:00:40Z verdict — coord 10 APPROVE
 - 2026-11-22T20:02:31Z closeout — all 10 coords approved; closeout sweep aa9af8c
 - 2026-11-22T20:08:42Z note — closeout review: no blockers; rework for WarningsAsMessages denylist, NU1900 fail-closed, secret-scan allowlist README note
+- 2026-11-22T20:13:36Z note — PR #2 opened; CI: 1 fail test-dotnet-setup/dotnet-version-only (runner has SDK 11.0.100), test rework dispatched
+- 2026-11-22T20:15:56Z gate — ask gate_578ba3dcce84 on task_61c7cd5910b5 (status completed): PR #2 verdict
