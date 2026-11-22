@@ -39,3 +39,5 @@ run: run_d5e187bc3a67
 - 2026-11-22T19:42:58Z worker_done — coord 8, sha f94d670637dcea73f659428f33feca4968e0d18b
 - 2026-11-22T19:42:58Z verify-minted — coord 8 round 1, task task_7cb5ba9c56b7
 - 2026-11-22T19:44:19Z verdict — coord 8 APPROVE
+- 2026-11-22T19:47:15Z note — task 9 failed: test-image-scan SIGPIPE at line 43 (run 45062502872); 6/7 green; draft PR #1; package leftover check blocked (gh token lacks read:packages)
+- 2026-11-22T19:47:44Z note — foreman: no local token widening; add in-CI leftover-package check job (if: always(), packages: read) to image self-tests; evidence = green CI
