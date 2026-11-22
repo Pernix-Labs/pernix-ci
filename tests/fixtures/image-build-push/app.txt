@@ -1,0 +1,1 @@
+pernix-ci image-build-push self-test fixture
