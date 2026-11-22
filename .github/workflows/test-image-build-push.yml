@@ -1,0 +1,247 @@
+name: test-image-build-push
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-image-build-push-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip registry tests on fork PR
+        run: echo "::notice::Fork PR has no packages:write. image-build-push registry tests skipped."
+
+  build:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+      cache-marker: ${{ steps.build-info.outputs.cache-marker }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Compute per-run image name
+        id: name
+        env:
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          echo "image=ghcr.io/${OWNER,,}/pernix-ci-selftest-image-build-push-${RUN_ID}-${RUN_ATTEMPT}" >>"$GITHUB_OUTPUT"
+
+      - name: Invalid sha fails before side effects
+        id: bad-sha
+        continue-on-error: true
+        uses: ./actions/image-build-push
+        with:
+          image: ${{ steps.name.outputs.image }}
+          context: tests/fixtures/image-build-push
+          sha: not-a-sha
+
+      - name: Invalid version fails before side effects
+        id: bad-version
+        continue-on-error: true
+        uses: ./actions/image-build-push
+        with:
+          image: ${{ steps.name.outputs.image }}
+          context: tests/fixtures/image-build-push
+          version: v1.2.3
+
+      - name: Non-ghcr image fails before side effects
+        id: bad-image
+        continue-on-error: true
+        uses: ./actions/image-build-push
+        with:
+          image: docker.io/pernix-labs/foo
+          context: tests/fixtures/image-build-push
+
+      - name: Assert invalid inputs failed
+        env:
+          BAD_SHA: ${{ steps.bad-sha.outcome }}
+          BAD_VERSION: ${{ steps.bad-version.outcome }}
+          BAD_IMAGE: ${{ steps.bad-image.outcome }}
+        run: |
+          set -euo pipefail
+          for o in "$BAD_SHA" "$BAD_VERSION" "$BAD_IMAGE"; do
+            [[ "$o" == "failure" ]] || { echo "::error::expected failure, got '$o'"; exit 1; }
+          done
+
+      - name: Build and push (cold)
+        id: bp
+        uses: ./actions/image-build-push
+        with:
+          image: ${{ steps.name.outputs.image }}
+          context: tests/fixtures/image-build-push
+          build-args: |
+            EXTRA_ARG=ignored
+            BUILD_VERSION=user-value-must-be-overridden
+
+      - name: Assert outputs
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          OUT_IMAGE: ${{ steps.bp.outputs.image }}
+          OUT_TAG: ${{ steps.bp.outputs.tag }}
+          OUT_DIGEST: ${{ steps.bp.outputs.digest }}
+          OUT_REF: ${{ steps.bp.outputs.ref }}
+          EXPECTED_TAG: sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$OUT_IMAGE" == "$IMAGE" ]] || fail "image output '$OUT_IMAGE' != '$IMAGE'"
+          [[ "$OUT_TAG" == "$EXPECTED_TAG" ]] || fail "tag output '$OUT_TAG' != '$EXPECTED_TAG'"
+          [[ "$OUT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "digest output '$OUT_DIGEST' malformed"
+          [[ "$OUT_REF" == "${IMAGE}@${OUT_DIGEST}" ]] || fail "ref output '$OUT_REF' malformed"
+          tag_digest=$(docker buildx imagetools inspect "${IMAGE}:${EXPECTED_TAG}" --format '{{json .Manifest}}' | jq -r .digest)
+          [[ "$tag_digest" == "$OUT_DIGEST" ]] || fail "tag ${EXPECTED_TAG} points at '$tag_digest', expected '$OUT_DIGEST'"
+
+      - name: Assert labels and single manifest
+        env:
+          REF: ${{ steps.bp.outputs.ref }}
+          SHA: ${{ github.sha }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          raw=$(docker buildx imagetools inspect --raw "$REF")
+          media_type=$(jq -r .mediaType <<<"$raw")
+          [[ "$media_type" == "application/vnd.oci.image.manifest.v1+json" || "$media_type" == "application/vnd.docker.distribution.manifest.v2+json" ]] ||
+            fail "expected single image manifest (provenance/sbom off), got '$media_type'"
+          config_digest=$(jq -r .config.digest <<<"$raw")
+          echo "config blob: $config_digest"
+          labels=$(docker buildx imagetools inspect "$REF" --format '{{json .Image}}' | jq -c .config.Labels)
+          echo "labels: $labels"
+          expected_version="0.0.0-sha.${SHA:0:7}"
+          [[ "$(jq -r '."org.opencontainers.image.revision"' <<<"$labels")" == "$SHA" ]] || fail "revision label mismatch"
+          [[ "$(jq -r '."org.opencontainers.image.version"' <<<"$labels")" == "$expected_version" ]] || fail "version label mismatch"
+          [[ "$(jq -r '."org.opencontainers.image.source"' <<<"$labels")" == "$SOURCE_URL" ]] || fail "source label mismatch"
+
+      - name: Assert no version or latest tags
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect --raw "${IMAGE}:latest" >/dev/null 2>&1; then
+            echo "::error::unexpected 'latest' tag on ${IMAGE}"
+            exit 1
+          fi
+
+      - name: Assert /build-info
+        id: build-info
+        env:
+          REF: ${{ steps.bp.outputs.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual=$(docker run --rm --pull always "$REF" cat /build-info)
+          expected=$(printf 'BUILD_VERSION=0.0.0-sha.%s\nBUILD_COMMIT=%s' "${SHA:0:7}" "$SHA")
+          echo "$actual"
+          [[ "$actual" == "$expected" ]] || { echo "::error::/build-info mismatch, expected: $expected"; exit 1; }
+          marker=$(docker run --rm "$REF" cat /cache-marker)
+          [[ -n "$marker" ]] || { echo "::error::empty /cache-marker"; exit 1; }
+          echo "cache-marker=$marker" >>"$GITHUB_OUTPUT"
+
+  rebuild:
+    # Fresh runner: no local builder cache, so a matching marker proves the gha cache was used.
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build and push (warm)
+        id: bp
+        uses: ./actions/image-build-push
+        with:
+          image: ${{ needs.build.outputs.image }}
+          context: tests/fixtures/image-build-push
+
+      - name: Assert cache hit
+        env:
+          REF: ${{ steps.bp.outputs.ref }}
+          EXPECTED_MARKER: ${{ needs.build.outputs.cache-marker }}
+        run: |
+          set -euo pipefail
+          marker=$(docker run --rm --pull always "$REF" cat /cache-marker)
+          echo "cold marker: $EXPECTED_MARKER"
+          echo "warm marker: $marker"
+          [[ "$marker" == "$EXPECTED_MARKER" ]] || { echo "::error::cache miss: /cache-marker layer was rebuilt"; exit 1; }
+
+  cleanup:
+    needs: [build, rebuild]
+    if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete per-run package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          pkg="pernix-ci-selftest-image-build-push-${RUN_ID}-${RUN_ATTEMPT}"
+          kind=$(gh api "/users/${OWNER}" --jq .type)
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${OWNER}"; else base="/users/${OWNER}"; fi
+          status=$(gh api -X DELETE "${base}/packages/container/${pkg}" --include 2>/dev/null | head -1 | awk '{print $2}') || true
+          case "$status" in
+            204) echo "Deleted package ${pkg}" ;;
+            404) echo "::notice::Package ${pkg} not found, nothing to delete" ;;
+            *) echo "::error::Failed to delete package ${pkg} (HTTP ${status:-unknown})"; exit 1 ;;
+          esac
+
+  leftover-check:
+    needs: [build, rebuild, cleanup]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Skip leftover check on fork PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: echo "::notice::Fork PR created no packages. image-build-push leftover package check skipped."
+
+      - name: Assert no per-run selftest package remains
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          names=("pernix-ci-selftest-image-build-push-${RUN_ID}-${RUN_ATTEMPT}")
+          kind="$(gh api "/users/${owner}" --jq .type)"
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
+          out="$(mktemp)"
+          failed=0
+          for name in "${names[@]}"; do
+            enc="$(jq -rn --arg n "$name" '$n|@uri')"
+            gh api -i "${base}/packages/container/${enc}" >"$out" 2>/dev/null || true
+            status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+            case "$status" in
+              404) echo "::notice::Selftest package ${name} absent" ;;
+              200) echo "::error::Selftest package ${name} left behind after run ${RUN_ID} attempt ${RUN_ATTEMPT}"; failed=1 ;;
+              *) echo "::error::Leftover lookup for ${name} returned HTTP ${status:-unknown}, cannot confirm cleanup"; failed=1 ;;
+            esac
+          done
+          exit "$failed"

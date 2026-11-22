@@ -1,0 +1,77 @@
+name: image-retention
+description: Delete expired GHCR package versions. Keeps the newest stable versions, expires prerelease and sha-only versions by age.
+
+inputs:
+  packages:
+    description: Newline list of GHCR package names (no owner, no tag), e.g. my-svc.
+    required: true
+  owner:
+    description: Package owner (org or user).
+    required: false
+    default: ${{ github.repository_owner }}
+  max-age-days:
+    description: Delete sha-only (or untagged) versions older than this many days.
+    required: false
+    default: '14'
+  prerelease-max-age-days:
+    description: Delete prerelease versions older than this many days. Prereleases do not count toward keep-versions.
+    required: false
+    default: '14'
+  keep-versions:
+    description: Number of newest stable versions to keep per package, by created_at.
+    required: false
+    default: '5'
+  stable-tag-pattern:
+    description: Regex. A version with any matching tag is stable.
+    required: false
+    default: '^v?[0-9]+\.[0-9]+\.[0-9]+$'
+  prerelease-tag-pattern:
+    description: Regex. A non-stable version with any matching tag is prerelease.
+    required: false
+    default: '^v?[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$'
+  dry-run:
+    description: '"true" to list planned deletions and delete nothing.'
+    required: false
+    default: 'false'
+  reference-time:
+    description: Time ages are measured from, ISO 8601 UTC (YYYY-MM-DDTHH:MM:SSZ). Empty = now. For tests and backfills.
+    required: false
+    default: ''
+  registry-token:
+    description: Token for GHCR and the GitHub Packages API (needs packages:write and Admin on each package).
+    required: false
+    default: ${{ github.token }}
+  registry-username:
+    description: Username for GHCR token exchange.
+    required: false
+    default: ${{ github.actor }}
+
+outputs:
+  deleted-count:
+    description: Number of versions deleted (planned deletions when dry-run=true).
+    value: ${{ steps.retention.outputs.deleted-count }}
+  kept-count:
+    description: Number of versions kept.
+    value: ${{ steps.retention.outputs.kept-count }}
+  deleted-versions:
+    description: JSON array of {package, id, tags} for deleted (or planned) versions.
+    value: ${{ steps.retention.outputs.deleted-versions }}
+
+runs:
+  using: composite
+  steps:
+    - id: retention
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        OWNER: ${{ inputs.owner }}
+        MAX_AGE_DAYS: ${{ inputs.max-age-days }}
+        PRERELEASE_MAX_AGE_DAYS: ${{ inputs.prerelease-max-age-days }}
+        KEEP_VERSIONS: ${{ inputs.keep-versions }}
+        STABLE_TAG_PATTERN: ${{ inputs.stable-tag-pattern }}
+        PRERELEASE_TAG_PATTERN: ${{ inputs.prerelease-tag-pattern }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        REFERENCE_TIME: ${{ inputs.reference-time }}
+        REGISTRY_TOKEN: ${{ inputs.registry-token }}
+        REGISTRY_USERNAME: ${{ inputs.registry-username }}
+      run: bash "$GITHUB_ACTION_PATH/image-retention.sh"

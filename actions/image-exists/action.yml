@@ -1,0 +1,38 @@
+name: image-exists
+description: Report whether <image>:<tag> exists in GHCR without pulling layers.
+
+inputs:
+  image:
+    description: Full image name without tag, e.g. ghcr.io/pernix-labs/my-svc. Host must be ghcr.io.
+    required: true
+  tag:
+    description: Tag to look up, e.g. sha-<40 hex>.
+    required: true
+  registry-token:
+    description: Token for GHCR and the GitHub Packages API.
+    required: false
+    default: ${{ github.token }}
+  registry-username:
+    description: Username for GHCR token exchange.
+    required: false
+    default: ${{ github.actor }}
+
+outputs:
+  exists:
+    description: '"true" if the manifest exists, else "false".'
+    value: ${{ steps.check.outputs.exists }}
+  digest:
+    description: Manifest digest (sha256:...) when exists=true, else empty.
+    value: ${{ steps.check.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        TAG: ${{ inputs.tag }}
+        REGISTRY_TOKEN: ${{ inputs.registry-token }}
+        REGISTRY_USERNAME: ${{ inputs.registry-username }}
+      run: bash "$GITHUB_ACTION_PATH/image-exists.sh"

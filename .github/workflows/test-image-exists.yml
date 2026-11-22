@@ -1,0 +1,172 @@
+name: test-image-exists
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: echo "::notice::Fork PR without packages:write. image-exists registry self-test skipped."
+
+  test:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - id: names
+        name: Compute per-run names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          base="pernix-ci-selftest-image-exists-${GITHUB_RUN_ID}"
+          {
+            echo "owner=${owner}"
+            echo "pkg=${base}-${GITHUB_RUN_ATTEMPT}"
+            echo "image=ghcr.io/${owner}/${base}-${GITHUB_RUN_ATTEMPT}"
+            echo "missing-image=ghcr.io/${owner}/${base}-missing"
+            echo "tag=seed-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            echo "random-tag=absent-${GITHUB_RUN_ID}-${RANDOM}${RANDOM}"
+          } >>"$GITHUB_OUTPUT"
+
+      - id: seed
+        name: Seed fixture image
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          TAG: ${{ steps.names.outputs.tag }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx build --push --provenance=false --sbom=false -t "${IMAGE}:${TAG}" tests/fixtures/image-exists
+          digest="$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "digest=${digest}" >>"$GITHUB_OUTPUT"
+
+      - id: present
+        name: Existing tag
+        uses: ./actions/image-exists
+        with:
+          image: ${{ steps.names.outputs.image }}
+          tag: ${{ steps.names.outputs.tag }}
+
+      - name: Assert existing tag -> true + digest
+        env:
+          EXISTS: ${{ steps.present.outputs.exists }}
+          DIGEST: ${{ steps.present.outputs.digest }}
+          EXPECTED: ${{ steps.seed.outputs.digest }}
+        run: |
+          [[ "$EXISTS" == "true" ]] || { echo "::error::expected exists=true, got '${EXISTS}'"; exit 1; }
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid digest '${DIGEST}'"; exit 1; }
+          [[ "$DIGEST" == "$EXPECTED" ]] || { echo "::error::digest '${DIGEST}' != pushed '${EXPECTED}'"; exit 1; }
+
+      - id: absent-tag
+        name: Random tag in existing package
+        uses: ./actions/image-exists
+        with:
+          image: ${{ steps.names.outputs.image }}
+          tag: ${{ steps.names.outputs.random-tag }}
+
+      - name: Assert random tag -> false
+        env:
+          EXISTS: ${{ steps.absent-tag.outputs.exists }}
+          DIGEST: ${{ steps.absent-tag.outputs.digest }}
+        run: |
+          [[ "$EXISTS" == "false" ]] || { echo "::error::expected exists=false, got '${EXISTS}'"; exit 1; }
+          [[ -z "$DIGEST" ]] || { echo "::error::expected empty digest, got '${DIGEST}'"; exit 1; }
+
+      - id: absent-pkg
+        name: Never-created package (D13 path)
+        uses: ./actions/image-exists
+        with:
+          image: ${{ steps.names.outputs.missing-image }}
+          tag: latest
+
+      - name: Assert never-created package -> false
+        env:
+          EXISTS: ${{ steps.absent-pkg.outputs.exists }}
+          DIGEST: ${{ steps.absent-pkg.outputs.digest }}
+        run: |
+          [[ "$EXISTS" == "false" ]] || { echo "::error::expected exists=false, got '${EXISTS}'"; exit 1; }
+          [[ -z "$DIGEST" ]] || { echo "::error::expected empty digest, got '${DIGEST}'"; exit 1; }
+
+      - id: bad-host
+        name: Non-ghcr image must fail
+        continue-on-error: true
+        uses: ./actions/image-exists
+        with:
+          image: docker.io/library/alpine
+          tag: latest
+
+      - name: Assert non-ghcr image failed
+        env:
+          OUTCOME: ${{ steps.bad-host.outcome }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure for non-ghcr image, got '${OUTCOME}'"; exit 1; }
+
+      - name: Cleanup seed package
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ steps.names.outputs.owner }}
+          PKG: ${{ steps.names.outputs.pkg }}
+        run: |
+          [[ -n "$PKG" ]] || exit 0
+          if [[ "$(gh api "users/${OWNER}" --jq .type)" == "Organization" ]]; then
+            base="orgs/${OWNER}"
+          else
+            base="users/${OWNER}"
+          fi
+          if ! out="$(gh api -X DELETE "${base}/packages/container/${PKG}" 2>&1)"; then
+            if grep -q 'HTTP 404' <<<"$out"; then
+              echo "::notice::package ${PKG} not found, nothing to delete"
+            else
+              echo "::error::cleanup of ${PKG} failed: ${out}"
+              exit 1
+            fi
+          fi
+
+  leftover-check:
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Skip leftover check on fork PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: echo "::notice::Fork PR created no packages. image-exists leftover package check skipped."
+
+      - name: Assert no per-run selftest package remains
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          names=("pernix-ci-selftest-image-exists-${RUN_ID}-${RUN_ATTEMPT}")
+          kind="$(gh api "/users/${owner}" --jq .type)"
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
+          out="$(mktemp)"
+          failed=0
+          for name in "${names[@]}"; do
+            enc="$(jq -rn --arg n "$name" '$n|@uri')"
+            gh api -i "${base}/packages/container/${enc}" >"$out" 2>/dev/null || true
+            status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+            case "$status" in
+              404) echo "::notice::Selftest package ${name} absent" ;;
+              200) echo "::error::Selftest package ${name} left behind after run ${RUN_ID} attempt ${RUN_ATTEMPT}"; failed=1 ;;
+              *) echo "::error::Leftover lookup for ${name} returned HTTP ${status:-unknown}, cannot confirm cleanup"; failed=1 ;;
+            esac
+          done
+          exit "$failed"

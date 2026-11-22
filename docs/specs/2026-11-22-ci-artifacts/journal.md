@@ -1,0 +1,52 @@
+# Journal: 2026-11-22-ci-artifacts
+run: run_d5e187bc3a67
+
+- 2026-11-22T19:06:53Z run-created — run_d5e187bc3a67
+- 2026-11-22T19:06:53Z supervised — task task_98080eb0679e dispatch ctx_85ffce70a9b8
+- 2026-11-22T19:09:47Z gate — ask gate_cc157fa5c3be on task_0ce8850326bd (status completed): requirements.md approval + Q1-Q4
+- 2026-11-22T19:10:19Z gate — requirements.md approve (foreman): Q1 secret scan fails, Q2 sha-<40>, Q3 prereleases expire by own age input and not in keep-5, Q4 upload-sarif false; fold in without re-gate
+- 2026-11-22T19:14:48Z gate — ask gate_499ed693e8d8 on task_5b9fb3778396 (status completed): design.md approval + R6 403 ruling
+- 2026-11-22T19:15:14Z gate — design.md approve (foreman): R6 403->Packages API confirm; fold-ins owner org/user, retention 403 remediation + self-test, promote Accept index+manifest; no re-gate
+- 2026-11-22T19:17:53Z gate — ask on task_94d64b5943c8 (status completed): tasks.md approval + task 9 draft-PR push
+- 2026-11-22T19:18:24Z gate — tasks.md approve (foreman): incl. task 9 draft PR; PR P5 files only; leftover selftest package = failure
+- 2026-11-22T19:18:31Z dag-materialized — 9 created, 0 replaced, 0 orphaned, 0 unchanged (map: .claude/orca-spec/runs/run_d5e187bc3a67/dag-map.json)
+- 2026-11-22T19:19:00Z note — worktree children branch from origin/main; fast-forward each child to spec branch after start
+- 2026-11-22T19:21:45Z worker_done — coord 1, sha 2dad7769e8e1c92513ad2fdf31c3cef4df71ca00, live GHCR 403 path not reproduced (GHCR returned 404)
+- 2026-11-22T19:21:45Z verify-minted — coord 1 round 1, task task_9986e363c936
+- 2026-11-22T19:22:25Z worker_done — coord 2, sha 41122b293e9919ce3a0874c72f0e6f309542b46a
+- 2026-11-22T19:22:26Z verify-minted — coord 2 round 1, task task_6bd681406cb7
+- 2026-11-22T19:23:01Z verdict — coord 1 APPROVE
+- 2026-11-22T19:24:13Z verdict — coord 2 APPROVE
+- 2026-11-22T19:27:48Z worker_done — coord 4, sha b1e4e06af19946a0a17ca2545870788cc0a911b1, checkout v4.4.0 vs v4.2.2 for task 8
+- 2026-11-22T19:27:49Z verify-minted — coord 4 round 1, task task_ed7e7339d6df
+- 2026-11-22T19:28:45Z verdict — coord 4 APPROVE
+- 2026-11-22T19:32:06Z worker_done — coord 3, sha 56b2c12b45f896787bd2f70f9313840f455e3aa1, outputs after continue-on-error unverified until CI
+- 2026-11-22T19:32:06Z verify-minted — coord 3 round 1, task task_fa933d951df4
+- 2026-11-22T19:33:46Z verdict — coord 3 APPROVE
+- 2026-11-22T19:34:25Z worker_done — coord 5, sha 1ee0d37abbe2e44a9fc4858cb4d02404eb136dcb, child protection + last-version guard stub-tested only
+- 2026-11-22T19:34:25Z verify-minted — coord 5 round 1, task task_237b098906a3
+- 2026-11-22T19:35:29Z rework-minted — coord 5 round 1, task task_0825edebc16c
+- 2026-11-22T19:36:11Z worker_done — coord 6, sha 47c5534ca93842a030f73250e836181f4e27389c, local check on SDK 10 only
+- 2026-11-22T19:36:11Z verify-minted — coord 6 round 1, task task_dd145c93aa70
+- 2026-11-22T19:36:29Z worker_done — coord 5, sha d612783ece0620b9f7f9bc3b0b768c6bc311020c, rework 1: guard before child protection
+- 2026-11-22T19:36:29Z verify-minted — coord 5 round 2, task task_3c7d8a2b0f51
+- 2026-11-22T19:37:24Z verdict — coord 6 APPROVE
+- 2026-11-22T19:38:16Z verdict — coord 5 APPROVE
+- 2026-11-22T19:38:16Z note — closeout: sync design.md image-retention step order (guard before child protection) per task 5 rework
+- 2026-11-22T19:39:28Z worker_done — coord 7, sha 881e79854ea59d6d4355d6545ceb008f2be31fb0, local feed ignores skip-duplicate (overwrites)
+- 2026-11-22T19:39:28Z verify-minted — coord 7 round 1, task task_5c65238ecc5e
+- 2026-11-22T19:41:10Z verdict — coord 7 APPROVE
+- 2026-11-22T19:42:58Z worker_done — coord 8, sha f94d670637dcea73f659428f33feca4968e0d18b
+- 2026-11-22T19:42:58Z verify-minted — coord 8 round 1, task task_7cb5ba9c56b7
+- 2026-11-22T19:44:19Z verdict — coord 8 APPROVE
+- 2026-11-22T19:47:15Z note — task 9 failed: test-image-scan SIGPIPE at line 43 (run 45062502872); 6/7 green; draft PR #1; package leftover check blocked (gh token lacks read:packages)
+- 2026-11-22T19:47:44Z note — foreman: no local token widening; add in-CI leftover-package check job (if: always(), packages: read) to image self-tests; evidence = green CI
+- 2026-11-22T19:52:18Z note — task 9 retry 1 failed: all functional jobs green; leftover-check HTTP 400 on org package list with GITHUB_TOKEN; fix = per-name lookup
+- 2026-11-22T19:56:11Z worker_done — coord 9, sha 78dac54f740f777928599df42f7b933c747a205a, 7/7 green incl leftover-check
+- 2026-11-22T19:56:11Z verify-minted — coord 9 round 1, task task_b19875667855
+- 2026-11-22T19:57:45Z verdict — coord 9 APPROVE
+- 2026-11-22T19:58:46Z note — closeout: allowed append-only As-built notes section in design.md (body unchanged)
+- 2026-11-22T19:59:17Z closeout — all 9 coords approved; CI 7/7 green on 78dac54; as-built notes 1e3ad91
+- 2026-11-22T20:02:02Z note — closeout review: nothing blocking; rework for 4 low items (image-exists digest-missing error, retention 404 child fetch, nuget-push and build-push README notes); trivy cache save on failure skipped (perf only)
+- 2026-11-22T20:04:20Z note — closeout review rework done: 1ca9f6e, 440935d
+- 2026-11-22T20:06:23Z gate — ask gate_6990ff385f91 on task_5fbf232d7d75 (status completed): PR #1 verdict
