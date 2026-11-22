@@ -266,6 +266,10 @@ for PKG in "${packages[@]}"; do
         echo "$parent" >>"$WORK/inspected"
         [[ "$parent" =~ $DIGEST_RE ]] || abort "version of ${PKG} has non-digest name '${parent}'"
         code="$(with_retry curl_once "$auth" "$WORK/manifest" -H "Accept: ${ACCEPT}" "https://ghcr.io/v2/${repo_path}/manifests/${parent}")"
+        if [[ "$code" == 404 ]]; then
+          echo "::warning::image-retention: ${PKG} manifest ${parent} returned HTTP 404; treating as no children"
+          continue
+        fi
         [[ "$code" == 200 ]] || abort "GET manifest ${repo_path}@${parent} returned HTTP ${code}"
         while IFS= read -r child; do
           [[ -n "$child" ]] || continue

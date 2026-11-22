@@ -119,7 +119,7 @@ code="$(with_retry curl_once "header = $(curl_quote "Authorization: Bearer ${BEA
   --head -H "Accept: ${ACCEPT}" "https://ghcr.io/v2/${REPO_PATH}/manifests/${TAG}")"
 case "$code" in
   200)
-    digest="$(grep -i '^docker-content-digest:' "$WORK/headers" | tail -n1 | cut -d: -f2- | tr -d ' \r')"
+    digest="$(grep -i '^docker-content-digest:' "$WORK/headers" | tail -n1 | cut -d: -f2- | tr -d ' \r' || true)"
     [[ "$digest" =~ $DIGEST_RE ]] || fail "manifest HEAD for ${IMAGE}:${TAG} returned 200 without a valid Docker-Content-Digest"
     write_outputs true "$digest"
     ;;

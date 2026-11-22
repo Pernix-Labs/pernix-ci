@@ -39,6 +39,8 @@ permissions:
 
 `dry-run: true` needs neither `id-token: write` nor an environment.
 
+The short-lived Trusted Publishing key is passed to `dotnet nuget push --api-key` on the command line, because `dotnet` has no stdin or env option for the key. It is masked in logs, valid only briefly, and the runner is ephemeral.
+
 ## Prerequisites
 
 - The caller job must set up the .NET SDK, e.g. with `actions/setup-dotnet`.

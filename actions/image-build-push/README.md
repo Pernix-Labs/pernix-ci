@@ -29,6 +29,8 @@ The push happens only after the full build succeeds, so a failed build or push l
 
 Invalid inputs fail with `::error::` naming the input before any login or build.
 
+> **Warning:** `build-args` must not carry secrets. Values pass through an unmasked step output and are baked into the image history. BuildKit secrets (`--secret`) are out of scope for this block.
+
 ## Outputs
 
 | Name | Example |
