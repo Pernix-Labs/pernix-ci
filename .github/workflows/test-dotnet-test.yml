@@ -1,0 +1,97 @@
+name: test-dotnet-test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: dotnet-test unit tests
+        run: python3 -I -m unittest discover -s tests/unit/dotnet-test
+      - name: _shared unit tests
+        run: python3 -I -m unittest discover -s tests/unit/_shared
+
+  fixture:
+    name: ${{ matrix.fixture }} ${{ matrix.case }}
+    runs-on: ubuntu-latest
+    # A filter value in double quotes uses \n for the MTP one-argument-per-line list.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # vstest: xunit.v3 on VSTest. 3 tests.
+          - { fixture: vstest, case: pass, expect: success, runner: vstest, trx-format: "", total: "3" }
+          - { fixture: vstest, case: fail, force-fail: "1", expect: failure, runner: vstest, trx-format: "" }
+          - { fixture: vstest, case: filter, filter: "FullyQualifiedName~CalculatorTests", expect: success, runner: vstest, trx-format: "", total: "2" }
+          - { fixture: vstest, case: filter-none, filter: "FullyQualifiedName~NoSuchTest", expect: failure, runner: vstest, trx-format: "" }
+          # mtp-xunit: xunit.v3 on MTP, no TrxReport. 4 tests (one Testcontainers)
+          # plus an explicit-only project that contributes 1 not-run test.
+          - { fixture: mtp-xunit, case: pass, expect: success, runner: mtp, trx-format: xunit, total: "5" }
+          - { fixture: mtp-xunit, case: fail, force-fail: "1", expect: failure, runner: mtp, trx-format: xunit }
+          - { fixture: mtp-xunit, case: filter, filter: "--filter-class\nFixture.MtpXunit.Tests.CalculatorTests", expect: success, runner: mtp, trx-format: xunit, total: "2" }
+          - { fixture: mtp-xunit, case: filter-none, filter: "--filter-class\nNoSuch.Class", expect: failure, runner: mtp, trx-format: xunit }
+          # mtp-trxreport: MSTest on MTP with Microsoft.Testing.Extensions.TrxReport. 3 tests.
+          - { fixture: mtp-trxreport, case: pass, expect: success, runner: mtp, trx-format: mtp, total: "3" }
+          - { fixture: mtp-trxreport, case: fail, force-fail: "1", expect: failure, runner: mtp, trx-format: mtp }
+          - { fixture: mtp-trxreport, case: filter, filter: "--filter\nFullyQualifiedName~CalculatorTests", expect: success, runner: mtp, trx-format: mtp, total: "2" }
+          - { fixture: mtp-trxreport, case: filter-none, filter: "--filter\nFullyQualifiedName~NoSuchTest", expect: failure, runner: mtp, trx-format: mtp }
+    env:
+      WD: tests/fixtures/dotnet-test/${{ matrix.fixture }}
+      FIXTURE_FORCE_FAIL: ${{ matrix.force-fail }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: ${{ env.WD }}
+      - uses: ./actions/dotnet-restore
+        with:
+          working-directory: ${{ env.WD }}
+      - uses: ./actions/dotnet-build
+        with:
+          working-directory: ${{ env.WD }}
+      - id: run
+        uses: ./actions/dotnet-test
+        continue-on-error: true
+        with:
+          working-directory: ${{ env.WD }}
+          filter: ${{ matrix.filter }}
+          artifact-name: test-results-${{ matrix.fixture }}-${{ matrix.case }}
+      - name: assert outcome and outputs
+        env:
+          OUTCOME: ${{ steps.run.outcome }}
+          EXPECT: ${{ matrix.expect }}
+          RUNNER: ${{ steps.run.outputs.test-runner }}
+          EXPECT_RUNNER: ${{ matrix.runner }}
+          TRX_FORMAT: ${{ steps.run.outputs.trx-format }}
+          EXPECT_TRX_FORMAT: ${{ matrix.trx-format }}
+          TOTAL: ${{ steps.run.outputs.total-count }}
+          EXPECT_TOTAL: ${{ matrix.total }}
+          FAILED: ${{ steps.run.outputs.failed-count }}
+          RESULTS_DIRECTORY: ${{ steps.run.outputs.results-directory }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$OUTCOME" == "$EXPECT" ]] || fail "expected outcome $EXPECT, got $OUTCOME"
+          [[ "$RUNNER" == "$EXPECT_RUNNER" ]] || fail "expected test-runner $EXPECT_RUNNER, got '$RUNNER'"
+          [[ "$TRX_FORMAT" == "$EXPECT_TRX_FORMAT" ]] || fail "expected trx-format '$EXPECT_TRX_FORMAT', got '$TRX_FORMAT'"
+          if [[ -n "$EXPECT_TOTAL" ]]; then
+            [[ "$TOTAL" == "$EXPECT_TOTAL" ]] || fail "expected total-count $EXPECT_TOTAL, got '$TOTAL'"
+          fi
+          if [[ "$EXPECT" == success ]]; then
+            [[ "$FAILED" == 0 ]] || fail "expected failed-count 0, got '$FAILED'"
+          fi
+          if [[ "$FIXTURE_FORCE_FAIL" == 1 ]]; then
+            [[ "$FAILED" == 1 ]] || fail "expected failed-count 1, got '$FAILED'"
+          fi
+          compgen -G "$RESULTS_DIRECTORY/*.trx" >/dev/null || fail "expected TRX files in '$RESULTS_DIRECTORY'"

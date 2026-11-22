@@ -1,0 +1,42 @@
+name: dotnet-restore
+description: Restore the caller's .NET solution or project with a cached NuGet global packages folder.
+
+inputs:
+  working-directory:
+    description: Directory that holds the solution or project.
+    required: false
+    default: .
+  project:
+    description: Solution or project path relative to working-directory. Empty means auto-detect (one *.slnx, else one *.sln, else one *.csproj).
+    required: false
+    default: ""
+  locked-mode:
+    description: Pass --locked-mode so restore fails when packages.lock.json is out of date.
+    required: false
+    default: "false"
+
+outputs:
+  project:
+    description: Resolved solution or project path, relative to working-directory.
+    value: ${{ steps.restore.outputs.project }}
+  cache-hit:
+    description: "'true' when the NuGet cache key matched exactly."
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles(format('{0}/**/Directory.Packages.props', inputs.working-directory), format('{0}/**/*.csproj', inputs.working-directory), format('{0}/**/packages.lock.json', inputs.working-directory), format('{0}/**/global.json', inputs.working-directory), format('{0}/**/nuget.config', inputs.working-directory), format('{0}/**/NuGet.Config', inputs.working-directory)) }}
+        restore-keys: nuget-${{ runner.os }}-
+
+    - id: restore
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_LOCKED_MODE: ${{ inputs.locked-mode }}
+      run: '"${{ github.action_path }}/restore.sh"'

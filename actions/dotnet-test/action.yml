@@ -1,0 +1,115 @@
+name: dotnet-test
+description: Run the caller's built .NET tests on VSTest or Microsoft.Testing.Platform, write a TRX job summary, upload TRX, and fail on test failures or too few tests.
+
+inputs:
+  working-directory:
+    description: Directory that holds the solution or project.
+    required: false
+    default: .
+  project:
+    description: Solution or project path relative to working-directory. Empty means auto-detect (one *.slnx, else one *.sln, else one *.csproj).
+    required: false
+    default: ""
+  configuration:
+    description: Build configuration passed to --configuration. Must match the dotnet-build configuration.
+    required: false
+    default: Release
+  global-json-file:
+    description: global.json used for runner detection. Empty means `<working-directory>/global.json`.
+    required: false
+    default: ""
+  filter:
+    description: "VSTest: one --filter expression. MTP: filter arguments, one per line (for example --filter-class, then Pernix.*)."
+    required: false
+    default: ""
+  test-args:
+    description: Extra dotnet test arguments, one per line, appended last.
+    required: false
+    default: ""
+  trx-format:
+    description: "MTP only: auto, mtp (--report-trx), or xunit (--report-xunit-trx)."
+    required: false
+    default: auto
+  min-tests:
+    description: Minimum discovered tests summed over all TRX files in the run. 0 disables.
+    required: false
+    default: "1"
+  results-directory:
+    description: Directory for TRX files. Empty means `<runner.temp>/test-results`.
+    required: false
+    default: ""
+  upload-results:
+    description: Upload TRX files as a workflow artifact (true or false).
+    required: false
+    default: "true"
+  artifact-name:
+    description: Artifact name for the TRX upload. Must be unique per job and matrix leg.
+    required: false
+    default: test-results
+
+outputs:
+  test-runner:
+    description: Runner used, vstest or mtp.
+    value: ${{ steps.test.outputs.test-runner }}
+  trx-format:
+    description: MTP TRX format used, mtp or xunit. Empty in VSTest mode.
+    value: ${{ steps.test.outputs.trx-format }}
+  passed-count:
+    description: Passed tests summed over all TRX files.
+    value: ${{ steps.summary.outputs.passed-count }}
+  failed-count:
+    description: Failed, errored, timed-out, and aborted tests summed over all TRX files.
+    value: ${{ steps.summary.outputs.failed-count }}
+  skipped-count:
+    description: Discovered tests that neither passed nor failed (total - passed - failed).
+    value: ${{ steps.summary.outputs.skipped-count }}
+  total-count:
+    description: Discovered tests summed over all TRX files.
+    value: ${{ steps.summary.outputs.total-count }}
+  results-directory:
+    description: Absolute directory that holds the TRX files.
+    value: ${{ steps.test.outputs.results-directory }}
+
+runs:
+  using: composite
+  steps:
+    - id: test
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_CONFIGURATION: ${{ inputs.configuration }}
+        INPUT_GLOBAL_JSON_FILE: ${{ inputs.global-json-file }}
+        INPUT_FILTER: ${{ inputs.filter }}
+        INPUT_TEST_ARGS: ${{ inputs.test-args }}
+        INPUT_TRX_FORMAT: ${{ inputs.trx-format }}
+        INPUT_RESULTS_DIRECTORY: ${{ inputs.results-directory || format('{0}/test-results', runner.temp) }}
+      run: '"${{ github.action_path }}/test.sh"'
+
+    - id: summary
+      if: always()
+      shell: bash
+      env:
+        RESULTS_DIRECTORY: ${{ steps.test.outputs.results-directory || inputs.results-directory || format('{0}/test-results', runner.temp) }}
+        TEST_RUNNER: ${{ steps.test.outputs.test-runner }}
+        TRX_FORMAT: ${{ steps.test.outputs.trx-format }}
+      run: python3 -I "${{ github.action_path }}/trx_summary.py" "$RESULTS_DIRECTORY"
+
+    - if: always() && inputs.upload-results == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.test.outputs.results-directory || inputs.results-directory || format('{0}/test-results', runner.temp) }}/**/*.trx
+        if-no-files-found: warn
+
+    - if: always()
+      shell: bash
+      env:
+        TEST_OUTCOME: ${{ steps.test.outcome }}
+        EXIT_CODE: ${{ steps.test.outputs.exit-code }}
+        FAILED_COUNT: ${{ steps.summary.outputs.failed-count }}
+        TOTAL_COUNT: ${{ steps.summary.outputs.total-count }}
+        TRX_COUNT: ${{ steps.summary.outputs.trx-count }}
+        RESULTS_DIRECTORY: ${{ steps.test.outputs.results-directory }}
+        INPUT_MIN_TESTS: ${{ inputs.min-tests }}
+      run: '"${{ github.action_path }}/enforce.sh"'

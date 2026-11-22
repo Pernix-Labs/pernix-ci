@@ -1,0 +1,37 @@
+name: dotnet-build
+description: Build the caller's restored .NET solution or project with --no-restore, keeping caller warning and TargetFramework settings.
+
+inputs:
+  working-directory:
+    description: Directory that holds the solution or project.
+    required: false
+    default: .
+  project:
+    description: Solution or project path relative to working-directory. Empty means auto-detect (one *.slnx, else one *.sln, else one *.csproj).
+    required: false
+    default: ""
+  configuration:
+    description: Build configuration passed to --configuration.
+    required: false
+    default: Release
+  build-args:
+    description: Extra dotnet build arguments, one per line (for example -p:Version=1.2.3). Arguments that override TargetFramework, warning, or NuGetAudit settings fail the block.
+    required: false
+    default: ""
+
+outputs:
+  project:
+    description: Resolved solution or project path, relative to working-directory.
+    value: ${{ steps.build.outputs.project }}
+
+runs:
+  using: composite
+  steps:
+    - id: build
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_CONFIGURATION: ${{ inputs.configuration }}
+        INPUT_BUILD_ARGS: ${{ inputs.build-args }}
+      run: '"${{ github.action_path }}/build.sh"'

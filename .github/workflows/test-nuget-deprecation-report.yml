@@ -1,0 +1,43 @@
+name: test-nuget-deprecation-report
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: report unit tests
+        run: python3 -I -m unittest discover -s tests/unit/nuget-deprecation-report -v
+
+  deprecated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/nuget-deprecation-report/deprecated
+      - uses: ./actions/dotnet-restore
+        with:
+          working-directory: tests/fixtures/nuget-deprecation-report/deprecated
+      - id: run
+        uses: ./actions/nuget-deprecation-report
+        with:
+          working-directory: tests/fixtures/nuget-deprecation-report/deprecated
+      - name: assert deprecated-count
+        env:
+          DEPRECATED: ${{ steps.run.outputs.deprecated-count }}
+        run: |
+          set -euo pipefail
+          echo "deprecated=$DEPRECATED"
+          (( DEPRECATED > 0 )) || { echo "::error::expected deprecated-count > 0, got '$DEPRECATED'"; exit 1; }
