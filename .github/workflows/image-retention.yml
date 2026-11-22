@@ -43,6 +43,11 @@ on:
         type: string
         required: false
         default: ""
+      solution:
+        description: Solution file, relative to working-directory. Empty auto-detects.
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -86,6 +91,7 @@ jobs:
           units-file: ${{ inputs.units-file }}
           working-directory: repo/${{ inputs.working-directory }}
           image-name-prefix: ${{ inputs.image-name-prefix }}
+          solution: ${{ inputs.solution }}
 
       - name: List image packages
         id: packages

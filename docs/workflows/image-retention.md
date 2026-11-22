@@ -19,6 +19,7 @@ The workflow checks out pernix-ci at its own commit (`job.workflow_sha`) into `p
 | `prerelease-max-age-days` | number | `14` | Delete prerelease versions older than this. |
 | `keep-versions` | number | `5` | Newest stable versions kept per package. |
 | `image-name-prefix` | string | | Prefix for every GHCR package name. Self-tests only. |
+| `solution` | string | | Solution file, relative to `working-directory`. Empty auto-detects. |
 
 ## Outputs
 
