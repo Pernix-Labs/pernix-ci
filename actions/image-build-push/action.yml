@@ -1,5 +1,5 @@
 name: image-build-push
-description: Build and push <image>:sha-<sha> to GHCR with OCI labels, build args, and GitHub Actions layer cache.
+description: Build and push <image>:sha-<sha> to GHCR with OCI labels, build args, and GitHub Actions layer cache. push=false builds into the local Docker image store only.
 
 inputs:
   image:
@@ -37,12 +37,16 @@ inputs:
     description: Repository URL for the org.opencontainers.image.source label.
     required: false
     default: ${{ github.server_url }}/${{ github.repository }}
+  push:
+    description: Push to GHCR (true|false). false skips docker login and loads the image into the local Docker image store.
+    required: false
+    default: "true"
   registry-token:
-    description: Token for ghcr.io login.
+    description: Token for ghcr.io login. Unused when push is false.
     required: false
     default: ${{ github.token }}
   registry-username:
-    description: Username for ghcr.io login.
+    description: Username for ghcr.io login. Unused when push is false.
     required: false
     default: ${{ github.actor }}
 
@@ -51,13 +55,13 @@ outputs:
     description: Image name without tag.
     value: ${{ steps.outputs.outputs.image }}
   tag:
-    description: Pushed tag, sha-<sha>.
+    description: Built tag, sha-<sha>.
     value: ${{ steps.outputs.outputs.tag }}
   digest:
-    description: Manifest digest, sha256:<64hex>.
+    description: Manifest digest, sha256:<64hex>. Local image id when push is false.
     value: ${{ steps.outputs.outputs.digest }}
   ref:
-    description: Immutable reference, <image>@<digest>.
+    description: Immutable reference, <image>@<digest>. Local reference <image>:sha-<sha> when push is false.
     value: ${{ steps.outputs.outputs.ref }}
 
 runs:
@@ -75,6 +79,7 @@ runs:
         BUILD_ARGS: ${{ inputs.build-args }}
         PLATFORMS: ${{ inputs.platforms }}
         CACHE: ${{ inputs.cache }}
+        PUSH: ${{ inputs.push }}
         SOURCE_URL: ${{ inputs.source-url }}
         REGISTRY_TOKEN: ${{ inputs.registry-token }}
         REGISTRY_USERNAME: ${{ inputs.registry-username }}
@@ -89,7 +94,8 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ steps.prepare.outputs.dockerfile }}
-        push: true
+        push: ${{ inputs.push == 'true' }}
+        load: ${{ inputs.push == 'false' }}
         tags: ${{ steps.prepare.outputs.tags }}
         labels: ${{ steps.prepare.outputs.labels }}
         build-args: ${{ steps.prepare.outputs.build-args }}
@@ -106,4 +112,6 @@ runs:
         IMAGE: ${{ inputs.image }}
         TAG: ${{ steps.prepare.outputs.tag }}
         DIGEST: ${{ steps.build.outputs.digest }}
+        IMAGE_ID: ${{ steps.build.outputs.imageid }}
+        PUSH: ${{ inputs.push }}
       run: '"$GITHUB_ACTION_PATH/image-build-push.sh" outputs'

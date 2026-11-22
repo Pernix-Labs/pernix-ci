@@ -1,0 +1,22 @@
+# Caller template: per-commit CI.
+# Copy to .github/workflows/ci.yml in the caller repo.
+# Needs .github/release-units.yml (see templates/release-units.yml).
+# Pin pernix-ci by vX.Y.Z tag or full commit sha, never a branch. Blocks follow
+# the `uses:` ref through job.workflow_sha (docs/adr/0012-reusable-workflow-self-pinning.md).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    permissions:
+      contents: read
+      packages: write
+    uses: Pernix-Labs/pernix-ci/.github/workflows/ci.yml@v1.0.0

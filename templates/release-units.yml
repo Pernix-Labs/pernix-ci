@@ -1,0 +1,23 @@
+# Example release-unit matrix.
+# Copy to .github/release-units.yml in the caller repo and edit.
+# Paths are relative to the workflows' `working-directory` (default repo root).
+# Unit name: ^[a-z0-9][a-z0-9-]*$, unique, equals the tag prefix
+# (tag `relay/v1.2.3` releases unit `relay`).
+#
+# units:
+#   # Image + packages unit.
+#   - name: relay
+#     image:
+#       project: src/Relay/Relay.csproj       # entry project
+#       dockerfile: src/Relay/Dockerfile
+#       context: .                            # optional, default "."
+#       name: pernix-outbox-relay             # optional GHCR package, default unit name
+#     packages:
+#       - src/Relay.Abstractions/Relay.Abstractions.csproj
+#     extra-inputs:                           # optional pathspecs outside the project closure
+#       - deploy/entrypoint.sh                # e.g. Dockerfile COPY sources
+#
+#   # Packages-only unit.
+#   - name: client
+#     packages:
+#       - src/Client/Client.csproj

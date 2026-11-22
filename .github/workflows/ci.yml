@@ -1,0 +1,374 @@
+name: ci
+
+# Reusable per-commit CI for .NET mono-repos (docs/workflows/ci.md).
+# Every job that uses blocks checks out pernix-ci at job.workflow_sha into
+# pernix-ci/ and the caller repo into repo/ (ADR 0012, spec D1, D2).
+
+on:
+  workflow_call:
+    inputs:
+      units-file:
+        description: Release-unit matrix file, relative to working-directory.
+        type: string
+        required: false
+        default: .github/release-units.yml
+      working-directory:
+        description: Mono-repo root inside the caller repo.
+        type: string
+        required: false
+        default: .
+      sha:
+        description: Commit to gate. Empty means the PR head sha, else github.sha. Ignored when tag is set.
+        type: string
+        required: false
+        default: ""
+      unit:
+        description: Gate only this unit. Empty gates all units. Ignored when tag is set.
+        type: string
+        required: false
+        default: ""
+      tag:
+        description: Release tag (CD use). Gates the tagged unit at the tagged commit and turns push mode on in auto.
+        type: string
+        required: false
+        default: ""
+      commit:
+        description: Self-test only. 40-hex commit used instead of resolving tag. Callers leave empty.
+        type: string
+        required: false
+        default: ""
+      default-branch:
+        description: Self-test only. Branch the tag commit must be reachable from. Empty means the repository default branch.
+        type: string
+        required: false
+        default: ""
+      push-image:
+        description: "Image push mode: auto (on for default-branch push and tag), true, or false."
+        type: string
+        required: false
+        default: auto
+      image-name-prefix:
+        description: Prefix for every GHCR package name (self-tests use per-run packages).
+        type: string
+        required: false
+        default: ""
+      solution:
+        description: Solution file, relative to working-directory. Empty auto-detects one *.slnx, else one *.sln.
+        type: string
+        required: false
+        default: ""
+    outputs:
+      units:
+        description: JSON array [{name, last-touch-sha, image-ref, reused}], one object per gated unit.
+        value: ${{ jobs.summary.outputs.units }}
+      unit:
+        description: Tagged unit. Empty without tag.
+        value: ${{ jobs.resolve.outputs.unit }}
+      version:
+        description: Tagged version without v. Empty without tag.
+        value: ${{ jobs.resolve.outputs.version }}
+      commit:
+        description: Tagged commit. Empty without tag.
+        value: ${{ jobs.resolve.outputs.commit }}
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Guard pernix-ci self-pin
+        env:
+          PERNIX_CI_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [ -z "${PERNIX_CI_SHA}" ]; then
+            echo "::error::pernix-ci reusable workflows require github.com job.workflow_sha"
+            exit 1
+          fi
+      - name: Checkout pernix-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pernix-Labs/pernix-ci
+          ref: ${{ job.workflow_sha }}
+          path: pernix-ci
+          persist-credentials: false
+      - name: Checkout caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit || inputs.tag || inputs.sha || github.event.pull_request.head.sha || github.sha }}
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./pernix-ci/actions/secret-scan
+        with:
+          scan-mode: auto
+          working-directory: repo
+
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      units: ${{ steps.select.outputs.units }}
+      push: ${{ steps.mode.outputs.push }}
+      sha: ${{ steps.tag.outputs.commit || inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      run-key: ${{ steps.mode.outputs.run-key }}
+      unit: ${{ steps.tag.outputs.unit }}
+      version: ${{ steps.tag.outputs.version }}
+      commit: ${{ steps.tag.outputs.commit }}
+    steps:
+      - name: Push mode
+        id: mode
+        env:
+          PUSH_IMAGE: ${{ inputs.push-image }}
+          SHA_INPUT: ${{ inputs.sha }}
+          PUSH: ${{ inputs.push-image == 'true' || (inputs.push-image == 'auto' && (inputs.tag != '' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)))) }}
+          RUN_KEY: ${{ job.check_run_id }}
+        run: |
+          case "${PUSH_IMAGE}" in
+            auto | true | false) ;;
+            *) echo "::error::input 'push-image' must be auto, true or false, got '${PUSH_IMAGE}'"; exit 1 ;;
+          esac
+          if [ -n "${SHA_INPUT}" ] && ! [[ "${SHA_INPUT}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::input 'sha' must be a 40-hex lowercase commit sha, got '${SHA_INPUT}'"
+            exit 1
+          fi
+          { echo "push=${PUSH}"; echo "run-key=${RUN_KEY}"; } >>"$GITHUB_OUTPUT"
+      - name: Guard pernix-ci self-pin
+        env:
+          PERNIX_CI_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [ -z "${PERNIX_CI_SHA}" ]; then
+            echo "::error::pernix-ci reusable workflows require github.com job.workflow_sha"
+            exit 1
+          fi
+      - name: Checkout pernix-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pernix-Labs/pernix-ci
+          ref: ${{ job.workflow_sha }}
+          path: pernix-ci
+          persist-credentials: false
+      - name: Checkout caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit || inputs.tag || inputs.sha || github.event.pull_request.head.sha || github.sha }}
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./pernix-ci/actions/dotnet-setup
+        with:
+          working-directory: repo/${{ inputs.working-directory }}
+      - id: units
+        uses: ./pernix-ci/actions/release-units
+        with:
+          units-file: ${{ inputs.units-file }}
+          working-directory: repo/${{ inputs.working-directory }}
+          solution: ${{ inputs.solution }}
+          image-name-prefix: ${{ inputs.image-name-prefix }}
+      - id: tag
+        if: inputs.tag != ''
+        uses: ./pernix-ci/actions/release-tag
+        with:
+          tag: ${{ inputs.tag }}
+          unit-names: ${{ steps.units.outputs.unit-names }}
+          default-branch: ${{ inputs.default-branch || github.event.repository.default_branch }}
+          commit: ${{ inputs.commit }}
+          working-directory: repo/${{ inputs.working-directory }}
+      - name: Select units
+        id: select
+        env:
+          UNITS: ${{ steps.units.outputs.units }}
+          UNIT: ${{ inputs.tag != '' && steps.tag.outputs.unit || inputs.unit }}
+        run: |
+          set -euo pipefail
+          units="$(jq -c --arg u "$UNIT" 'if $u == "" then . else map(select(.name == $u)) end | if length == 0 then error("no unit selected: \($u)") else . end' <<<"$UNITS")"
+          echo "units=${units}" >>"$GITHUB_OUTPUT"
+
+  unit:
+    name: unit (${{ matrix.unit.name }})
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        unit: ${{ fromJSON(needs.resolve.outputs.units) }}
+    env:
+      UNIT_WD: repo/${{ inputs.working-directory }}
+    steps:
+      - name: Guard pernix-ci self-pin
+        env:
+          PERNIX_CI_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [ -z "${PERNIX_CI_SHA}" ]; then
+            echo "::error::pernix-ci reusable workflows require github.com job.workflow_sha"
+            exit 1
+          fi
+      - name: Checkout pernix-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pernix-Labs/pernix-ci
+          ref: ${{ job.workflow_sha }}
+          path: pernix-ci
+          persist-credentials: false
+      - name: Checkout caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          path: repo
+          persist-credentials: false
+
+      # Push mode ON: reuse sha-<L> when it exists (Req 4.5).
+      - id: exists
+        if: contains(matrix.unit.kinds, 'image') && needs.resolve.outputs.push == 'true'
+        uses: ./pernix-ci/actions/image-exists
+        with:
+          image: ${{ matrix.unit.image }}
+          tag: sha-${{ matrix.unit.last-touch-sha }}
+
+      # Build path, or reuse of a unit with packages (pack dry check, Req 4.8).
+      - if: steps.exists.outputs.exists != 'true' || contains(matrix.unit.kinds, 'packages')
+        uses: ./pernix-ci/actions/dotnet-setup
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+      - id: solution
+        if: steps.exists.outputs.exists != 'true' || contains(matrix.unit.kinds, 'packages')
+        uses: ./pernix-ci/actions/dotnet-unit-solution
+        with:
+          projects: ${{ matrix.unit.projects-list }}
+          name: ${{ matrix.unit.name }}
+          working-directory: ${{ env.UNIT_WD }}
+      - if: steps.exists.outputs.exists != 'true' || contains(matrix.unit.kinds, 'packages')
+        uses: ./pernix-ci/actions/dotnet-restore
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+          project: ${{ steps.solution.outputs.solution }}
+
+      # Vulnerability gate: build path, or reuse of a unit with packages, so a
+      # reused tag never publishes packages past a new advisory.
+      - if: steps.exists.outputs.exists != 'true' || contains(matrix.unit.kinds, 'packages')
+        uses: ./pernix-ci/actions/nuget-vulnerability-gate
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+          project: ${{ steps.solution.outputs.solution }}
+
+      # Remaining gates, skipped on reuse (Req 4.5).
+      - if: steps.exists.outputs.exists != 'true'
+        uses: ./pernix-ci/actions/nuget-deprecation-report
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+          project: ${{ steps.solution.outputs.solution }}
+      - if: steps.exists.outputs.exists != 'true'
+        uses: ./pernix-ci/actions/dotnet-build
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+          project: ${{ steps.solution.outputs.solution }}
+      - if: steps.exists.outputs.exists != 'true' && join(matrix.unit.test-projects, '') != ''
+        uses: ./pernix-ci/actions/dotnet-test
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+          project: ${{ steps.solution.outputs.solution }}
+          artifact-name: test-results-${{ github.run_attempt }}-${{ needs.resolve.outputs.run-key }}-${{ matrix.unit.name }}
+      - name: No test projects
+        if: steps.exists.outputs.exists != 'true' && join(matrix.unit.test-projects, '') == ''
+        env:
+          UNIT_NAME: ${{ matrix.unit.name }}
+        run: echo "::notice::unit ${UNIT_NAME} has no test projects, dotnet-test skipped"
+
+      # Image: build (push per mode) unless reused, then always scan.
+      - id: build
+        if: contains(matrix.unit.kinds, 'image') && steps.exists.outputs.exists != 'true'
+        uses: ./pernix-ci/actions/image-build-push
+        with:
+          image: ${{ matrix.unit.image }}
+          context: ${{ env.UNIT_WD }}/${{ matrix.unit.context }}
+          dockerfile: ${{ env.UNIT_WD }}/${{ matrix.unit.dockerfile }}
+          sha: ${{ matrix.unit.last-touch-sha }}
+          version: ${{ matrix.unit.ci-version }}
+          push: ${{ needs.resolve.outputs.push }}
+      - if: contains(matrix.unit.kinds, 'image')
+        uses: ./pernix-ci/actions/image-scan
+        with:
+          image-ref: ${{ steps.exists.outputs.exists == 'true' && format('{0}@{1}', matrix.unit.image, steps.exists.outputs.digest) || steps.build.outputs.ref }}
+          image-source: ${{ needs.resolve.outputs.push == 'true' && 'remote' || 'docker' }}
+
+      # Packages: pack dry check, never pushed (Req 4.7, 4.8).
+      - name: Package paths
+        id: pack-projects
+        if: contains(matrix.unit.kinds, 'packages')
+        env:
+          PACKAGES: ${{ toJSON(matrix.unit.packages) }}
+        run: |
+          { echo "projects<<PACK_EOF"; jq -r --arg wd "$UNIT_WD" '.[] | "\($wd)/\(.)"' <<<"$PACKAGES"; echo "PACK_EOF"; } >>"$GITHUB_OUTPUT"
+      - if: contains(matrix.unit.kinds, 'packages')
+        uses: ./pernix-ci/actions/nuget-pack
+        with:
+          projects: ${{ steps.pack-projects.outputs.projects }}
+          version: ${{ matrix.unit.ci-version }}
+          output-dir: ${{ runner.temp }}/nuget-pack-dry-check
+
+      # Leg result (D11), merged by summary.
+      - name: Write unit result
+        env:
+          NAME: ${{ matrix.unit.name }}
+          LAST_TOUCH_SHA: ${{ matrix.unit.last-touch-sha }}
+          IMAGE_REF: ${{ steps.exists.outputs.exists == 'true' && format('{0}@{1}', matrix.unit.image, steps.exists.outputs.digest) || (needs.resolve.outputs.push == 'true' && steps.build.outputs.ref || '') }}
+          REUSED: ${{ steps.exists.outputs.exists == 'true' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/unit-result"
+          jq -n --arg name "$NAME" --arg l "$LAST_TOUCH_SHA" --arg ref "$IMAGE_REF" --arg reused "$REUSED" '{name: $name, "last-touch-sha": $l, "image-ref": $ref, reused: $reused}' >"$RUNNER_TEMP/unit-result/unit-result-${NAME}.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unit-result-${{ github.run_attempt }}-${{ needs.resolve.outputs.run-key }}-${{ matrix.unit.name }}
+          path: ${{ runner.temp }}/unit-result/unit-result-${{ matrix.unit.name }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+  summary:
+    needs: [resolve, unit]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      units: ${{ steps.merge.outputs.units }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.unit.result != 'skipped'
+        with:
+          pattern: unit-result-${{ github.run_attempt }}-${{ needs.resolve.outputs.run-key }}-*
+          path: ${{ runner.temp }}/unit-results
+          merge-multiple: true
+      - name: Merge unit results
+        id: merge
+        if: always()
+        env:
+          EXPECTED: ${{ needs.resolve.outputs.units || '[]' }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/unit-results"
+          mkdir -p "$dir"
+          units="$(find "$dir" -name 'unit-result-*.json' -exec cat {} + | jq -cs 'sort_by(.name)')"
+          echo "units=${units}" >>"$GITHUB_OUTPUT"
+          failed="$(jq -r --argjson ok "$units" '[.[].name] - [$ok[].name] | .[]' <<<"$EXPECTED")"
+          {
+            echo "## CI units"
+            echo
+            echo "| Unit | Last-touch sha | Reused | Image ref |"
+            echo "|---|---|---|---|"
+            jq -r '.[] | "| \(.name) | `\(.["last-touch-sha"])` | \(.reused) | `\(.["image-ref"])` |"' <<<"$units"
+            while IFS= read -r name; do
+              [ -n "$name" ] && echo "| ${name} | | failed | |"
+            done <<<"$failed"
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [ "${UNIT_RESULT}" != "success" ]; then
+            echo "::error::unit legs did not succeed (${UNIT_RESULT}). Failed units: $(echo "$failed" | paste -sd ' ' -)"
+            exit 1
+          fi

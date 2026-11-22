@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# image-scan: Trivy vuln + secret scan of a pushed GHCR image ref.
+# image-scan: Trivy vuln + secret scan of a GHCR image ref, pulled from the
+# registry (image-source=remote) or read from the local Docker daemon (image-source=docker).
 #
 # Usage:
 #   image-scan.sh scan      # validate, install pinned Trivy, scan, strip secrets, SARIF, counts, summary, outputs
@@ -154,6 +155,7 @@ cmd_scan() {
   local ignore_file="${IGNORE_FILE:-}" ignore_unfixed="${IGNORE_UNFIXED:-}"
   local upload_sarif="${UPLOAD_SARIF:-}" sarif_category="${SARIF_CATEGORY:-}"
   local registry_token="${REGISTRY_TOKEN:-}" registry_username="${REGISTRY_USERNAME:-}"
+  local image_source="${IMAGE_SOURCE:-}"
   local runner_temp="${RUNNER_TEMP:-}"
 
   # --- validate (no side effects before this block completes) ---
@@ -171,8 +173,14 @@ cmd_scan() {
   bool_input ignore-unfixed "$ignore_unfixed"
   bool_input upload-sarif "$upload_sarif"
   require sarif-category "$sarif_category"
-  require registry-token "$registry_token"
-  require registry-username "$registry_username"
+  case "$image_source" in
+    remote)
+      require registry-token "$registry_token"
+      require registry-username "$registry_username"
+      ;;
+    docker) ;;
+    *) fail "input 'image-source' must be 'remote' or 'docker', got '${image_source}'" ;;
+  esac
   require RUNNER_TEMP "$runner_temp"
 
   # --- install ---
@@ -187,7 +195,7 @@ cmd_scan() {
   local sarif="${work}/results.sarif" summary="${work}/summary.md"
   local -a args=(
     image
-    --image-src remote
+    --image-src "$image_source"
     --scanners "vuln,secret"
     --format json
     --exit-code 0
@@ -201,7 +209,11 @@ cmd_scan() {
 
   echo "Scanning ${image_ref} with Trivy ${TRIVY_VERSION}"
   local rc=0
-  TRIVY_USERNAME="$registry_username" TRIVY_PASSWORD="$registry_token" "$trivy" "${args[@]}" || rc=$?
+  if [[ "$image_source" == "remote" ]]; then
+    TRIVY_USERNAME="$registry_username" TRIVY_PASSWORD="$registry_token" "$trivy" "${args[@]}" || rc=$?
+  else
+    env -u TRIVY_USERNAME -u TRIVY_PASSWORD "$trivy" "${args[@]}" || rc=$?
+  fi
   if ((rc != 0)); then
     rm -f "$raw_json"
     fail "Trivy failed (exit ${rc}) scanning ${image_ref}: vulnerability DB download, registry auth, or image pull error"

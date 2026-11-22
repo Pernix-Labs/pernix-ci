@@ -1,0 +1,10 @@
+units:
+  - name: svc
+    image:
+      project: src/Svc/Svc.csproj
+      dockerfile: src/Svc/Dockerfile
+    extra-inputs:
+      - deploy/svc.conf
+  - name: lib
+    packages:
+      - src/Lib/Lib.csproj

@@ -1,0 +1,79 @@
+name: test-dotnet-unit-solution
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/release-flow/repo
+
+      # Fixture copied outside the checkout so generated files never touch it.
+      - name: Copy fixture
+        run: cp -R tests/fixtures/release-flow/repo "$RUNNER_TEMP/repo"
+
+      - id: svc
+        uses: ./actions/dotnet-unit-solution
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          name: svc
+          projects: |
+            src/Shared/Shared.csproj
+            src/Svc/Svc.csproj
+            tests/Svc.Tests/Svc.Tests.csproj
+
+      - name: "Assert: solution holds Shared, Svc, Svc.Tests only"
+        env:
+          SOLUTION: ${{ steps.svc.outputs.solution }}
+        run: |
+          set -euo pipefail
+          [[ "$SOLUTION" == .pernix-ci-units/svc.slnx ]] || { echo "::error::unexpected solution '$SOLUTION'"; exit 1; }
+          file="$RUNNER_TEMP/repo/$SOLUTION"
+          [[ -f "$file" ]] || { echo "::error::$file not written"; exit 1; }
+          actual="$(grep -o 'Path="[^"]*"' "$file" | sort)"
+          expected="$(printf '%s\n' \
+            'Path="../src/Shared/Shared.csproj"' \
+            'Path="../src/Svc/Svc.csproj"' \
+            'Path="../tests/Svc.Tests/Svc.Tests.csproj"' | sort)"
+          [[ "$actual" == "$expected" ]] || { echo "::error::unexpected projects in $SOLUTION:"; cat "$file"; exit 1; }
+
+      - name: "Assert: build on solution builds only listed projects"
+        working-directory: ${{ runner.temp }}/repo
+        env:
+          SOLUTION: ${{ steps.svc.outputs.solution }}
+        run: |
+          set -euo pipefail
+          dotnet build "$SOLUTION"
+          for p in src/Shared src/Svc tests/Svc.Tests; do
+            [[ -d "$p/bin" ]] || { echo "::error::$p was not built"; exit 1; }
+          done
+          for p in src/Lib tests/Lib.Tests; do
+            [[ ! -e "$p/bin" ]] || { echo "::error::$p was built but is not listed"; exit 1; }
+          done
+
+      - id: again
+        uses: ./actions/dotnet-unit-solution
+        continue-on-error: true
+        with:
+          working-directory: ${{ runner.temp }}/repo
+          name: svc
+          projects: src/Svc/Svc.csproj
+      - name: "Assert: existing output fails"
+        env:
+          OUTCOME: ${{ steps.again.outcome }}
+          SOLUTION: ${{ steps.again.outputs.solution }}
+        run: |
+          set -euo pipefail
+          [[ "$OUTCOME" == failure ]] || { echo "::error::expected failure on existing output, got '$OUTCOME'"; exit 1; }
+          [[ -z "$SOLUTION" ]] || { echo "::error::expected no solution output, got '$SOLUTION'"; exit 1; }

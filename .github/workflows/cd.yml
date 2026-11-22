@@ -1,0 +1,261 @@
+name: cd
+
+# Reusable CD for one release unit. Parses the release tag, resolves the unit
+# at the tagged commit, rescans and promotes the existing sha-<L> image to the
+# release version. Builds nothing and publishes no package: the caller's
+# ci job (reusable ci.yml) runs first, the caller's publish job runs after
+# (templates/cd.yml). Self-pins to its own commit via job.workflow_sha
+# (docs/adr/0012-reusable-workflow-self-pinning.md).
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag `<unit>/vX.Y.Z[-pre]` (or `vX.Y.Z[-pre]` for a single-unit matrix). Empty = github.ref_name.
+        type: string
+        required: false
+        default: ""
+      units-file:
+        description: Matrix file, relative to working-directory.
+        type: string
+        required: false
+        default: .github/release-units.yml
+      working-directory:
+        description: Mono-repo root inside the caller repo.
+        type: string
+        required: false
+        default: .
+      commit:
+        description: Self-test only. 40-hex commit used instead of resolving the tag. Callers leave empty.
+        type: string
+        required: false
+        default: ""
+      default-branch:
+        description: Self-test only. Branch the commit must be reachable from. Empty = repository default branch. Callers leave empty.
+        type: string
+        required: false
+        default: ""
+      image-name-prefix:
+        description: Prefix for every GHCR package name (self-tests use per-run packages).
+        type: string
+        required: false
+        default: ""
+      solution:
+        description: Solution file, relative to working-directory. Empty auto-detects.
+        type: string
+        required: false
+        default: ""
+    outputs:
+      unit:
+        description: Released unit name.
+        value: ${{ jobs.outputs.outputs.unit }}
+      version:
+        description: Release version without the `v` prefix.
+        value: ${{ jobs.outputs.outputs.version }}
+      prerelease:
+        description: "`true` when the version has a prerelease part, else `false`."
+        value: ${{ jobs.outputs.outputs.prerelease }}
+      commit:
+        description: Tagged commit, 40 hex.
+        value: ${{ jobs.outputs.outputs.commit }}
+      packages:
+        description: Newline list of the unit's package csproj paths, relative to working-directory. Empty for an image-only unit.
+        value: ${{ jobs.outputs.outputs.packages }}
+      image-ref:
+        description: Promoted image `<image>@<digest>`. Empty for a packages-only unit.
+        value: ${{ jobs.outputs.outputs.image-ref }}
+      image-tags:
+        description: Newline list of tags promoted to the digest. Empty for a packages-only unit.
+        value: ${{ jobs.outputs.outputs.image-tags }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      unit: ${{ steps.tag.outputs.unit }}
+      version: ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      commit: ${{ steps.tag.outputs.commit }}
+      unit-json: ${{ steps.select.outputs.unit-json }}
+      has-image: ${{ steps.select.outputs.has-image }}
+    steps:
+      - name: Guard pernix-ci self-pin
+        env:
+          PERNIX_CI_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [ -z "${PERNIX_CI_SHA}" ]; then
+            echo "::error::pernix-ci reusable workflows require github.com job.workflow_sha"
+            exit 1
+          fi
+      - name: Checkout pernix-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pernix-Labs/pernix-ci
+          ref: ${{ job.workflow_sha }}
+          path: pernix-ci
+          persist-credentials: false
+      - name: Checkout caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit || inputs.tag || github.ref_name }}
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./pernix-ci/actions/dotnet-setup
+        with:
+          working-directory: repo/${{ inputs.working-directory }}
+
+      - id: units
+        uses: ./pernix-ci/actions/release-units
+        with:
+          units-file: ${{ inputs.units-file }}
+          working-directory: repo/${{ inputs.working-directory }}
+          solution: ${{ inputs.solution }}
+          image-name-prefix: ${{ inputs.image-name-prefix }}
+
+      - id: tag
+        uses: ./pernix-ci/actions/release-tag
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+          unit-names: ${{ steps.units.outputs.unit-names }}
+          commit: ${{ inputs.commit }}
+          default-branch: ${{ inputs.default-branch || github.event.repository.default_branch }}
+          working-directory: repo/${{ inputs.working-directory }}
+
+      - name: Select unit
+        id: select
+        env:
+          UNITS: ${{ steps.units.outputs.units }}
+          UNIT: ${{ steps.tag.outputs.unit }}
+        run: |
+          set -euo pipefail
+          unit_json=$(jq -ce --arg u "$UNIT" '.[] | select(.name == $u)' <<<"$UNITS")
+          echo "unit-json=$unit_json" >>"$GITHUB_OUTPUT"
+          echo "has-image=$(jq -r '.kinds | index("image") != null' <<<"$unit_json")" >>"$GITHUB_OUTPUT"
+
+  promote:
+    needs: resolve
+    if: needs.resolve.outputs.has-image == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-ref: ${{ steps.ref.outputs.image-ref }}
+      image-tags: ${{ steps.promote.outputs.tags }}
+    env:
+      IMAGE: ${{ fromJSON(needs.resolve.outputs.unit-json).image }}
+      SOURCE_TAG: sha-${{ fromJSON(needs.resolve.outputs.unit-json)['last-touch-sha'] }}
+    steps:
+      - name: Guard pernix-ci self-pin
+        env:
+          PERNIX_CI_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [ -z "${PERNIX_CI_SHA}" ]; then
+            echo "::error::pernix-ci reusable workflows require github.com job.workflow_sha"
+            exit 1
+          fi
+      - name: Checkout pernix-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pernix-Labs/pernix-ci
+          ref: ${{ job.workflow_sha }}
+          path: pernix-ci
+          persist-credentials: false
+
+      - id: exists
+        uses: ./pernix-ci/actions/image-exists
+        with:
+          image: ${{ env.IMAGE }}
+          tag: ${{ env.SOURCE_TAG }}
+
+      - name: Require CI image
+        if: steps.exists.outputs.exists != 'true'
+        run: |
+          echo "::error::${IMAGE}:${SOURCE_TAG} not found: run ci job first (templates/cd.yml)"
+          exit 1
+
+      - uses: ./pernix-ci/actions/image-scan
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.exists.outputs.digest }}
+
+      # sha-<L> is mutable: promote only the scanned digest.
+      - id: recheck
+        uses: ./pernix-ci/actions/image-exists
+        with:
+          image: ${{ env.IMAGE }}
+          tag: ${{ env.SOURCE_TAG }}
+
+      - name: Require scanned digest before promote
+        env:
+          SCANNED: ${{ steps.exists.outputs.digest }}
+          CURRENT: ${{ steps.recheck.outputs.digest }}
+        run: |
+          if [ "${CURRENT}" != "${SCANNED}" ]; then
+            echo "::error::${IMAGE}:${SOURCE_TAG} moved after scan: scanned ${SCANNED}, now '${CURRENT}'. No tags written. Re-run cd."
+            exit 1
+          fi
+
+      - id: promote
+        uses: ./pernix-ci/actions/image-promote
+        with:
+          image: ${{ env.IMAGE }}
+          source-tag: ${{ env.SOURCE_TAG }}
+          tags: ${{ needs.resolve.outputs.version }}
+
+      - name: Require scanned digest after promote
+        env:
+          SCANNED: ${{ steps.exists.outputs.digest }}
+          PROMOTED: ${{ steps.promote.outputs.digest }}
+          TAGS: ${{ needs.resolve.outputs.version }}
+        run: |
+          if [ "${PROMOTED}" != "${SCANNED}" ]; then
+            echo "::error::${IMAGE}:${SOURCE_TAG} moved during promote: scanned ${SCANNED}, promoted '${PROMOTED}' as ${TAGS}. The promoted tag points at an unscanned digest. Delete it and re-run cd."
+            exit 1
+          fi
+
+      - name: Image ref
+        id: ref
+        env:
+          DIGEST: ${{ steps.promote.outputs.digest }}
+        run: echo "image-ref=${IMAGE}@${DIGEST}" >>"$GITHUB_OUTPUT"
+
+  outputs:
+    needs: [resolve, promote]
+    if: always() && needs.resolve.result == 'success' && (needs.promote.result == 'success' || needs.promote.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      unit: ${{ needs.resolve.outputs.unit }}
+      version: ${{ needs.resolve.outputs.version }}
+      prerelease: ${{ needs.resolve.outputs.prerelease }}
+      commit: ${{ needs.resolve.outputs.commit }}
+      packages: ${{ fromJSON(needs.resolve.outputs.unit-json)['packages-list'] }}
+      image-ref: ${{ needs.promote.outputs.image-ref }}
+      image-tags: ${{ needs.promote.outputs.image-tags }}
+    steps:
+      - name: Summary
+        env:
+          UNIT: ${{ needs.resolve.outputs.unit }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+          IMAGE_REF: ${{ needs.promote.outputs.image-ref }}
+          PACKAGES: ${{ fromJSON(needs.resolve.outputs.unit-json)['packages-list'] }}
+        run: |
+          pkgs=none
+          [ -z "$PACKAGES" ] || pkgs="\`${PACKAGES//$'\n'/\`, \`}\`"
+          {
+            echo "### Release ${UNIT} ${VERSION}"
+            echo
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| commit | \`${COMMIT}\` |"
+            echo "| image | \`${IMAGE_REF:-none}\` |"
+            echo "| packages | ${pkgs} |"
+          } >>"$GITHUB_STEP_SUMMARY"

@@ -1,10 +1,14 @@
 name: image-scan
-description: Trivy vulnerability + secret scan of a pushed GHCR image ref. Fails on fail-severities or any secret.
+description: Trivy vulnerability + secret scan of a GHCR image ref (pushed, or local Docker image). Fails on fail-severities or any secret.
 
 inputs:
   image-ref:
     description: Image to scan, ghcr.io only, with tag or digest (e.g. ghcr.io/pernix-labs/foo:sha-<sha> or ghcr.io/pernix-labs/foo@sha256:<digest>).
     required: true
+  image-source:
+    description: Where Trivy reads the image. remote pulls from ghcr.io. docker reads a local Docker daemon image by the same ref and passes no registry credentials.
+    required: false
+    default: remote
   fail-severities:
     description: Comma-separated vulnerability severities that fail the block (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL). Any secret always fails.
     required: false
@@ -26,11 +30,11 @@ inputs:
     required: false
     default: image-scan
   registry-token:
-    description: Token for pulling the image from ghcr.io.
+    description: Token for pulling the image from ghcr.io. Unused with image-source docker.
     required: false
     default: ${{ github.token }}
   registry-username:
-    description: Username for pulling the image from ghcr.io.
+    description: Username for pulling the image from ghcr.io. Unused with image-source docker.
     required: false
     default: ${{ github.actor }}
 
@@ -77,6 +81,7 @@ runs:
       shell: bash
       env:
         IMAGE_REF: ${{ inputs.image-ref }}
+        IMAGE_SOURCE: ${{ inputs.image-source }}
         FAIL_SEVERITIES: ${{ inputs.fail-severities }}
         IGNORE_FILE: ${{ inputs.ignore-file }}
         IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}

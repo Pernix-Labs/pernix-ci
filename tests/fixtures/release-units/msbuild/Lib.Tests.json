@@ -1,0 +1,66 @@
+{
+  "Properties": {
+    "IsTestProject": "",
+    "IsTestingPlatformApplication": ""
+  },
+  "Items": {
+    "ProjectReference": [
+      {
+        "Identity": "../../src/Lib/Lib.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "/repo/src/Lib/Lib.csproj",
+        "RootDir": "/",
+        "Filename": "Lib",
+        "Extension": ".csproj",
+        "RelativeDir": "../../src/Lib/",
+        "Directory": "repo/src/Lib/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/repo/tests/Lib.Tests/Lib.Tests.csproj",
+        "DefiningProjectDirectory": "/repo/tests/Lib.Tests/",
+        "DefiningProjectName": "Lib.Tests",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ],
+    "PackageReference": [
+      {
+        "Identity": "Microsoft.Testing.Extensions.TrxReport",
+        "FullPath": "/repo/tests/Lib.Tests/Microsoft.Testing.Extensions.TrxReport",
+        "RootDir": "/",
+        "Filename": "Microsoft.Testing.Extensions",
+        "Extension": ".TrxReport",
+        "RelativeDir": "",
+        "Directory": "repo/tests/Lib.Tests/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/repo/tests/Lib.Tests/Lib.Tests.csproj",
+        "DefiningProjectDirectory": "/repo/tests/Lib.Tests/",
+        "DefiningProjectName": "Lib.Tests",
+        "DefiningProjectExtension": ".csproj"
+      },
+      {
+        "Identity": "xunit.v3",
+        "FullPath": "/repo/tests/Lib.Tests/xunit.v3",
+        "RootDir": "/",
+        "Filename": "xunit",
+        "Extension": ".v3",
+        "RelativeDir": "",
+        "Directory": "repo/tests/Lib.Tests/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/repo/tests/Lib.Tests/Lib.Tests.csproj",
+        "DefiningProjectDirectory": "/repo/tests/Lib.Tests/",
+        "DefiningProjectName": "Lib.Tests",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ]
+  }
+}

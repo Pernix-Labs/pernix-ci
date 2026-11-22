@@ -1,0 +1,74 @@
+name: test-external-caller-v1
+
+# Run at closeout, after the v1.0.0 and v1 tags exist (Req 8.7, 10).
+# Same steps as test-external-caller.yml, blocks resolved via @v1 the way an
+# external caller pins them. Fixtures come from the local checkout under
+# pernix-ci/.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-caller-v1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: pernix-ci
+          persist-credentials: false
+
+      - name: Assert no actions/ at workspace root
+        run: |
+          [ ! -e "$GITHUB_WORKSPACE/actions" ] || { echo "::error::$GITHUB_WORKSPACE/actions must not exist"; exit 1; }
+
+      - name: Create caller repo
+        run: |
+          set -euo pipefail
+          cp -R pernix-ci/tests/fixtures/dotnet-restore/app caller
+          cd caller
+          git init -q
+          git -c user.name=ci -c user.email=ci@example.invalid add -A
+          git -c user.name=ci -c user.email=ci@example.invalid commit -q -m "caller fixture"
+
+      - uses: Pernix-Labs/pernix-ci/actions/secret-scan@v1
+        with:
+          scan-mode: full-history
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-setup@v1
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-restore@v1
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/nuget-vulnerability-gate@v1
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/nuget-deprecation-report@v1
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-build@v1
+        with:
+          working-directory: caller
+
+      - name: Create caller test repo
+        run: cp -R pernix-ci/tests/fixtures/dotnet-test/mtp-xunit caller-test
+
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-setup@v1
+        with:
+          working-directory: caller-test
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-restore@v1
+        with:
+          working-directory: caller-test
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-build@v1
+        with:
+          working-directory: caller-test
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-test@v1
+        with:
+          working-directory: caller-test
+
+      - name: Assert no actions/ at workspace root after blocks
+        run: |
+          [ ! -e "$GITHUB_WORKSPACE/actions" ] || { echo "::error::$GITHUB_WORKSPACE/actions must not exist"; exit 1; }

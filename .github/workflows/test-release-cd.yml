@@ -1,0 +1,277 @@
+name: test-release-cd
+
+# Self-test of the caller cd.yml flow (templates/cd.yml) on the release-flow
+# fixture (Req 8.5, 8.6, 8.9). Synthetic run-unique tags and the self-test
+# commit/default-branch inputs (spec D8) replace pushing real tags.
+#   svc: ci -> release -> assert promoted <version> digest == sha-<L> digest.
+#   lib: ci -> release -> publish (template steps, local paths, nuget-push
+#        dry-run, no id-token: write) -> assert package version in local feed.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: echo "::notice::Fork PR without packages:write and without the head branch in this repo. release-flow CD self-tests skipped."
+
+  # svc: image unit.
+  ci-svc:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      working-directory: tests/fixtures/release-flow/repo
+      tag: svc/v0.0.1-selftest.${{ github.run_id }}
+      commit: ${{ github.event.pull_request.head.sha || github.sha }}
+      default-branch: ${{ github.head_ref || github.event.repository.default_branch }}
+      image-name-prefix: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-
+
+  release-svc:
+    needs: ci-svc
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/cd.yml
+    with:
+      working-directory: tests/fixtures/release-flow/repo
+      tag: svc/v0.0.1-selftest.${{ github.run_id }}
+      commit: ${{ github.event.pull_request.head.sha || github.sha }}
+      default-branch: ${{ github.head_ref || github.event.repository.default_branch }}
+      image-name-prefix: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-
+
+  assert-svc:
+    needs: [ci-svc, release-svc]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Assert release outputs
+        env:
+          UNIT: ${{ needs.release-svc.outputs.unit }}
+          VERSION: ${{ needs.release-svc.outputs.version }}
+          PRERELEASE: ${{ needs.release-svc.outputs.prerelease }}
+          COMMIT: ${{ needs.release-svc.outputs.commit }}
+          PACKAGES: ${{ needs.release-svc.outputs.packages }}
+          IMAGE_TAGS: ${{ needs.release-svc.outputs.image-tags }}
+          EXPECTED_VERSION: 0.0.1-selftest.${{ github.run_id }}
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$UNIT" == "svc" ]] || fail "unit '${UNIT}', expected svc"
+          [[ "$VERSION" == "$EXPECTED_VERSION" ]] || fail "version '${VERSION}', expected ${EXPECTED_VERSION}"
+          [[ "$PRERELEASE" == "true" ]] || fail "prerelease '${PRERELEASE}', expected true"
+          [[ "$COMMIT" == "$EXPECTED_COMMIT" ]] || fail "commit '${COMMIT}', expected ${EXPECTED_COMMIT}"
+          [[ -z "$PACKAGES" ]] || fail "packages '${PACKAGES}', expected empty for image unit"
+          [[ "$IMAGE_TAGS" == "$EXPECTED_VERSION" ]] || fail "image-tags '${IMAGE_TAGS}', expected ${EXPECTED_VERSION}"
+
+      - name: Assert promoted tag digest equals sha-<L> digest (registry HEAD)
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          UNITS: ${{ needs.ci-svc.outputs.units }}
+          IMAGE_REF: ${{ needs.release-svc.outputs.image-ref }}
+          VERSION: ${{ needs.release-svc.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+          PKG: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-svc
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          repo="${OWNER,,}/${PKG}"
+          image="ghcr.io/${repo}"
+          [[ "${IMAGE_REF%@*}" == "$image" ]] || fail "image-ref '${IMAGE_REF}' not for ${image}"
+          ref_digest="${IMAGE_REF#*@}"
+          [[ "$ref_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "image-ref digest '${ref_digest}' malformed"
+          svc="$(jq -ce '.[] | select(.name == "svc")' <<<"$UNITS")" || fail "unit svc missing from ci outputs"
+          l="$(jq -r '.["last-touch-sha"]' <<<"$svc")"
+          [[ "$l" =~ ^[0-9a-f]{40}$ ]] || fail "last-touch-sha '${l}' malformed"
+          token="$(curl -fsSL -u "${GITHUB_ACTOR}:${GHCR_TOKEN}" "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" | jq -r .token)"
+          [[ -n "$token" && "$token" != "null" ]] || fail "ghcr token exchange returned no token"
+          accept="application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json"
+          head_digest() {
+            curl -fsS -I -H "Authorization: Bearer ${token}" -H "Accept: ${accept}" "https://ghcr.io/v2/${repo}/manifests/$1" |
+              awk 'tolower($1) == "docker-content-digest:" {print $2}' | tr -d '\r'
+          }
+          src="$(head_digest "sha-${l}")"
+          dst="$(head_digest "${VERSION}")"
+          echo "sha-${l} -> ${src}"
+          echo "${VERSION} -> ${dst}"
+          [[ -n "$src" ]] || fail "HEAD ${image}:sha-${l} returned no digest"
+          [[ "$dst" == "$src" ]] || fail "${image}:${VERSION} digest '${dst}' != sha-${l} digest '${src}'"
+          [[ "$ref_digest" == "$src" ]] || fail "release image-ref digest '${ref_digest}' != sha-${l} digest '${src}'"
+          ci_ref="$(jq -r '.["image-ref"]' <<<"$svc")"
+          [[ "$ci_ref" == "${image}@${src}" ]] || fail "ci image-ref '${ci_ref}' != ${image}@${src}"
+
+  # lib: packages unit.
+  ci-lib:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      working-directory: tests/fixtures/release-flow/repo
+      tag: lib/v0.0.1-selftest.${{ github.run_id }}
+      commit: ${{ github.event.pull_request.head.sha || github.sha }}
+      default-branch: ${{ github.head_ref || github.event.repository.default_branch }}
+      image-name-prefix: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-
+
+  release-lib:
+    needs: ci-lib
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/cd.yml
+    with:
+      working-directory: tests/fixtures/release-flow/repo
+      tag: lib/v0.0.1-selftest.${{ github.run_id }}
+      commit: ${{ github.event.pull_request.head.sha || github.sha }}
+      default-branch: ${{ github.head_ref || github.event.repository.default_branch }}
+      image-name-prefix: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-
+
+  # Mirrors templates/cd.yml publish: no environment, no id-token: write,
+  # blocks by local path, caller repo under repo/, nuget-push dry-run.
+  publish:
+    needs: release-lib
+    if: needs.release-lib.outputs.packages != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      UNIT_WD: repo/tests/fixtures/release-flow/repo
+    steps:
+      - name: Checkout pernix-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-lib.outputs.commit }}
+          path: repo
+          persist-credentials: false
+
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+
+      - uses: ./actions/dotnet-restore
+        with:
+          working-directory: ${{ env.UNIT_WD }}
+
+      - name: Package paths
+        id: projects
+        env:
+          PACKAGES: ${{ needs.release-lib.outputs.packages }}
+        run: |
+          { echo "projects<<PACK_EOF"; while IFS= read -r p; do [[ -n "$p" ]] && echo "${UNIT_WD}/${p}"; done <<<"$PACKAGES"; echo "PACK_EOF"; } >>"$GITHUB_OUTPUT"
+
+      - id: pack
+        uses: ./actions/nuget-pack
+        with:
+          projects: ${{ steps.projects.outputs.projects }}
+          version: ${{ needs.release-lib.outputs.version }}
+          output-dir: ${{ runner.temp }}/release-flow-pack
+
+      - id: push
+        uses: ./actions/nuget-push
+        with:
+          packages: ${{ steps.pack.outputs.packages }}
+          dry-run: 'true'
+          local-feed-dir: ${{ runner.temp }}/release-flow-feed
+
+      - name: Assert package version in local feed
+        env:
+          UNIT: ${{ needs.release-lib.outputs.unit }}
+          VERSION: ${{ needs.release-lib.outputs.version }}
+          PACKAGES: ${{ needs.release-lib.outputs.packages }}
+          IMAGE_REF: ${{ needs.release-lib.outputs.image-ref }}
+          COUNT: ${{ steps.push.outputs.pushed-count }}
+          EXPECTED_VERSION: 0.0.1-selftest.${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$UNIT" == "lib" ]] || fail "unit '${UNIT}', expected lib"
+          [[ "$VERSION" == "$EXPECTED_VERSION" ]] || fail "version '${VERSION}', expected ${EXPECTED_VERSION}"
+          [[ "$PACKAGES" == "src/Lib/Lib.csproj" ]] || fail "packages '${PACKAGES}', expected src/Lib/Lib.csproj"
+          [[ -z "$IMAGE_REF" ]] || fail "image-ref '${IMAGE_REF}', expected empty for packages unit"
+          [[ "$COUNT" == "1" ]] || fail "pushed-count '${COUNT}', expected 1"
+          found="$(find "$RUNNER_TEMP/release-flow-feed" -iname "Fixture.Lib.${EXPECTED_VERSION}.nupkg" | wc -l)"
+          [[ "$found" -eq 1 ]] || { find "$RUNNER_TEMP/release-flow-feed"; fail "Fixture.Lib.${EXPECTED_VERSION}.nupkg not in local feed"; }
+
+  cleanup:
+    needs: [ci-svc, release-svc, assert-svc, ci-lib, release-lib]
+    if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete per-run selftest package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PKG: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-svc
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          if [[ "$(gh api "users/${owner}" --jq .type)" == "Organization" ]]; then
+            base="orgs/${owner}"
+          else
+            base="users/${owner}"
+          fi
+          if ! out="$(gh api -X DELETE "${base}/packages/container/${PKG}" 2>&1)"; then
+            if grep -q 'HTTP 404' <<<"$out"; then
+              echo "::notice::package ${PKG} not found, nothing to delete"
+            else
+              echo "::error::cleanup of ${PKG} failed: ${out}"
+              exit 1
+            fi
+          fi
+
+  leftover-check:
+    needs: [cleanup]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Skip leftover check on fork PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: echo "::notice::Fork PR created no packages. release-flow CD leftover package check skipped."
+
+      - name: Assert no per-run selftest package remains
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          names=("pernix-ci-selftest-release-flow-${RUN_ID}-${RUN_ATTEMPT}-svc")
+          kind="$(gh api "/users/${owner}" --jq .type)"
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
+          out="$(mktemp)"
+          failed=0
+          for name in "${names[@]}"; do
+            enc="$(jq -rn --arg n "$name" '$n|@uri')"
+            gh api -i "${base}/packages/container/${enc}" >"$out" 2>/dev/null || true
+            status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+            case "$status" in
+              404) echo "::notice::Selftest package ${name} absent" ;;
+              200) echo "::error::Selftest package ${name} left behind after run ${RUN_ID} attempt ${RUN_ATTEMPT}"; failed=1 ;;
+              *) echo "::error::Leftover lookup for ${name} returned HTTP ${status:-unknown}, cannot confirm cleanup"; failed=1 ;;
+            esac
+          done
+          exit "$failed"

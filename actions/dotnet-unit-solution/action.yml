@@ -1,0 +1,30 @@
+name: dotnet-unit-solution
+description: Write a per-unit .slnx holding only the listed projects, so single-project blocks gate exactly one release unit.
+
+inputs:
+  projects:
+    description: Newline-separated project paths, relative to `working-directory` (for example the `projects-list` field of a `release-units` element).
+    required: true
+  name:
+    description: Unit name (`^[a-z0-9][a-z0-9-]*$`). The solution is written to `.pernix-ci-units/<name>.slnx`.
+    required: true
+  working-directory:
+    description: Mono-repo root. Project paths and the output path are relative to it.
+    required: false
+    default: .
+
+outputs:
+  solution:
+    description: Generated solution path, relative to `working-directory` (`.pernix-ci-units/<name>.slnx`).
+    value: ${{ steps.write.outputs.solution }}
+
+runs:
+  using: composite
+  steps:
+    - id: write
+      shell: bash
+      env:
+        INPUT_PROJECTS: ${{ inputs.projects }}
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: '"$GITHUB_ACTION_PATH/dotnet-unit-solution.sh"'

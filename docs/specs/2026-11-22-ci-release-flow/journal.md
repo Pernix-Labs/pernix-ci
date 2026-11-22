@@ -1,0 +1,77 @@
+# Journal: 2026-11-22-ci-release-flow
+run: run_db1582f36196
+
+- 2026-11-22T20:20:01Z run-created — run_db1582f36196
+- 2026-11-22T20:20:01Z supervised — task task_18b10aa0b610 dispatch ctx_2d80b5150ec5
+- 2026-11-22T20:20:42Z note — architect terminal term_d95dee03-98ce-4494-97e4-cfd336836492 dispatch ctx_7e5288dd3cc8 (requirements task task_a01dd7b4fa92)
+- 2026-11-22T20:24:50Z gate — ask gate_c1a35cc5ce04 on task_a01dd7b4fa92 (status completed): approve requirements.md
+- 2026-11-22T20:25:18Z gate — requirements.md approve (foreman, rulings folded in without re-gate: Q2 drop version-line; Q8 PR CI load+scan no push, push only default-branch CI and CD; rest as proposed)
+- 2026-11-22T20:27:23Z note — requirements.md rulings folded (task_c25a36c9ed36), status approved
+- 2026-11-22T20:35:17Z note — design.md C review: 2 objections (CD self-test reachability on PR merge sha, outputs job cancelled-promote) sent to architect task_3689c809a003
+- 2026-11-22T20:36:14Z gate — ask gate_3f74d89ffc9b on task_ab26051022e8 (status completed): approve design.md
+- 2026-11-22T20:36:36Z gate — design.md approve (foreman: Q1 additive P5 inputs, P5 self-tests stay green; Q2 accept; Q3 commit input; RK1 verify job.workflow_sha in first task with real run, else switch to caller-passed pernix-ci-ref without asking, record in ADR)
+- 2026-11-22T20:37:09Z note — design.md rulings folded (task_dca8270f5737), status approved
+- 2026-11-22T20:39:50Z note — tasks.md C review: 3 objections (over-serialised on task 1, task 11 missing dep 10, task 1 caller repo source) sent to architect task_e43e27447553
+- 2026-11-22T20:40:30Z gate — ask on task_4bcd874af458 (status completed): approve tasks.md + task 1 probe caller repo
+- 2026-11-22T20:41:10Z gate — tasks.md approve (foreman: probe O1 in pernix-outbox-relay temp branch, on: push to probe/rk1-workflow-sha only, delete both temp branches + probe GHCR artifacts, leftovers = task failure; task 14 draft PR OK)
+- 2026-11-22T20:41:13Z dag-materialized — 14 created, 0 replaced, 0 orphaned, 0 unchanged (map: .claude/orca-spec/runs/run_db1582f36196/dag-map.json)
+- 2026-11-22T20:41:50Z note — impl started: coord 1 ctx_9c7b961daa65 (probe ruling sent msg_d6a1c6dfa7fe), coord 2 ctx_1a7dc35b68da
+- 2026-11-22T20:43:55Z worker_done — coord 2, sha ab71ab85dc558aa600c30bdbf7144134e5cc1ebf, fixture build/test/docker/trivy clean locally
+- 2026-11-22T20:43:55Z verify-minted — coord 2 round 1, task task_69cfa867a7f4
+- 2026-11-22T20:44:05Z worker_done — coord 1, sha 1cd6645, RK1 pass, mode job-workflow-sha, run 45067970650
+- 2026-11-22T20:44:05Z verify-minted — coord 1 round 1, task task_70c2defa4060
+- 2026-11-22T20:44:41Z verdict — coord 1 APPROVE
+- 2026-11-22T20:45:45Z verdict — coord 2 APPROVE
+- 2026-11-22T20:46:19Z note — coord 5 question: test-project detection -> O1 (IsTestProject OR IsTestingPlatformApplication OR known test-framework PackageReference), evaluation-only
+- 2026-11-22T20:47:44Z worker_done — coord 3, sha 8663c48, push input; new self-test job not yet run on GitHub
+- 2026-11-22T20:47:45Z verify-minted — coord 3 round 1, task task_0017e535dd97
+- 2026-11-22T20:49:24Z rework-minted — coord 3 round 1, task task_e6ee394ecd77
+- 2026-11-22T20:50:49Z worker_done — coord 3, sha 3e1b9e2, rework 1: separate DIGEST/IMAGE_ID, store-aware id assert; merged at 3e1b9e2
+- 2026-11-22T20:50:49Z verify-minted — coord 3 round 2, task task_5e12b781a496
+- 2026-11-22T20:51:37Z verdict — coord 3 APPROVE
+- 2026-11-22T20:51:53Z note — new-child worktrees created at main 377fbd2, not spec tip; workers told to merge aps-forvox/spec-ci-release-flow first (coord 4)
+- 2026-11-22T20:53:35Z worker_done — coord 4, sha 68dfbe6, image-source input; runtime proof deferred to CI (local bash 3)
+- 2026-11-22T20:53:36Z verify-minted — coord 4 round 1, task task_b3d9b02743f4
+- 2026-11-22T20:54:02Z worker_done — coord 5, sha 7557451, test projects match by DIRECT ProjectReference to a closure project (transitive breaks Req 8.2 Lib.Tests case); units-file relative to working-directory
+- 2026-11-22T20:54:02Z verify-minted — coord 5 round 1, task task_d890eb5dd187
+- 2026-11-22T20:54:29Z verdict — coord 4 APPROVE
+- 2026-11-22T20:55:55Z verdict — coord 5 APPROVE
+- 2026-11-22T20:55:55Z note — closeout todo: sync design.md (units-file relative to working-directory; test projects direct-ref only) per coord 5 verifier
+- 2026-11-22T20:57:54Z worker_done — coord 7, sha c055968, unit slnx block; CI run pending
+- 2026-11-22T20:57:54Z verify-minted — coord 7 round 1, task task_edd1c7000688
+- 2026-11-22T20:57:54Z worker_done — coord 6, sha 40dc448, release-tag block; selftest helper under tests/unit/release-tag
+- 2026-11-22T20:57:54Z verify-minted — coord 6 round 1, task task_ff8ea4a82a31
+- 2026-11-22T20:58:55Z verdict — coord 7 APPROVE
+- 2026-11-22T20:59:10Z verdict — coord 6 APPROVE
+- 2026-11-22T20:59:56Z worker_done — coord 12, sha 767ed14, pinned @377fbd2 job + @v1 dispatch workflow; not yet run
+- 2026-11-22T20:59:56Z verify-minted — coord 12 round 1, task task_21ad92f04406
+- 2026-11-22T21:03:27Z note — actionlint 1.7.12 rejects job.workflow_sha: coord 9 owns new .github/actionlint.yaml (narrow ignore for ci/cd/image-retention); coord 8 told not to touch it
+- 2026-11-22T21:04:15Z worker_done — coord 9, sha c500bf8, C: image-retention.yml lacks the solution input that ci.yml/cd.yml have (release-units fails on multi-solution callers); treat as a change request
+- 2026-11-22T21:04:16Z verify-minted — coord 9 round 1, task task_cc68496e028c
+- 2026-11-22T21:04:53Z worker_done — coord 8, sha db894a6, artifact names add resolve check_run_id (accepted deviation); actionlint config from coord 9 now merged, so full-repo actionlint must be clean
+- 2026-11-22T21:04:53Z verify-minted — coord 8 round 1, task task_7092b84b87b0
+- 2026-11-22T21:05:40Z verdict — coord 12 APPROVE
+- 2026-11-22T21:05:41Z rework-minted — coord 9 round 1, task task_f897652685d8
+- 2026-11-22T21:06:37Z worker_done — coord 9, sha 11b945e, rework 1: solution input on image-retention.yml
+- 2026-11-22T21:06:37Z verify-minted — coord 9 round 2, task task_734125c3ab8e
+- 2026-11-22T21:07:18Z verdict — coord 8 APPROVE
+- 2026-11-22T21:07:31Z verdict — coord 9 APPROVE
+- 2026-11-22T21:08:43Z note — coord 10: lint templates by explicit path (release-units.yml is not a workflow)
+- 2026-11-22T21:09:04Z worker_done — coord 10, sha a54ddb0, templates pinned @v1.0.0; lint covers 3 workflow templates by explicit path (ruling O1)
+- 2026-11-22T21:09:04Z verify-minted — coord 10 round 1, task task_c17ef3b64f25
+- 2026-11-22T21:10:10Z verdict — coord 10 APPROVE
+- 2026-11-22T21:13:32Z worker_done — coord 11, sha 55d6850, push-image passed as ${{ 'true' }} (actionlint); ci-local separate prefix; live run pending task 14
+- 2026-11-22T21:13:33Z verify-minted — coord 11 round 1, task task_c793507bf6e2
+- 2026-11-22T21:14:22Z verdict — coord 11 APPROVE
+- 2026-11-22T21:15:58Z worker_done — coord 13, sha 9d73733, ADRs + README; actionlint note in README Development
+- 2026-11-22T21:15:58Z verify-minted — coord 13 round 1, task task_34efb1106aaf
+- 2026-11-22T21:16:43Z verdict — coord 13 APPROVE
+- 2026-11-22T21:17:22Z note — C pushed branch and opened draft PR #3 (worker terminal denied push); coord 14 watches runs
+- 2026-11-22T21:24:24Z worker_done — coord 14, sha c46a7bb, 21 workflows green on PR #3; leftover-check 404 for all selftest packages
+- 2026-11-22T21:24:24Z verify-minted — coord 14 round 1, task task_6d6ca39e99a9
+- 2026-11-22T21:27:11Z verdict — coord 14 APPROVE
+- 2026-11-22T21:27:25Z note — all 14 coords approved; closeout worker task_709a677fb750 started
+- 2026-11-22T21:28:53Z closeout — closeout worker 93e0e87 (ADR 0008 cite, ADR 0012 PR #3 evidence); design.md as-built note waived (frozen; deviations in ADR 0008/README/journal)
+- 2026-11-22T21:31:06Z note — closeout review: 2 major (reuse skips NuGet gate for published packages; scanned vs promoted digest not pinned), 3 minor validation fixes -> rework task_4b7fd8048210
+- 2026-11-22T21:33:32Z note — review rework 43572ad merged on branch (F1-F5); C checked cd.yml digest pin diff
+- 2026-11-22T21:39:30Z gate — ask gate_42ede79c67f4 on task_709a677fb750 (status completed): PR #3 verdict
