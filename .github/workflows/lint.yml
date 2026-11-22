@@ -45,6 +45,10 @@ jobs:
       - name: actionlint
         run: actionlint -color
 
+      # Workflow templates are listed explicitly (templates/release-units.yml is not a workflow). Add new workflow templates here.
+      - name: actionlint templates
+        run: actionlint -color templates/ci.yml templates/cd.yml templates/retention.yml
+
       - name: shellcheck
         run: git ls-files -z '*.sh' | xargs -0 -r shellcheck
 

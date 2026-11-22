@@ -1,0 +1,25 @@
+# Caller template: daily GHCR image retention.
+# Copy to .github/workflows/retention.yml in the caller repo.
+# GITHUB_TOKEN needs Admin on each GHCR package (default for packages this
+# repo's workflows first pushed). See docs/workflows/image-retention.md.
+# Pin pernix-ci by vX.Y.Z tag or full commit sha, never a branch.
+name: retention
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List planned deletions and delete nothing.
+        type: boolean
+        default: false
+
+jobs:
+  retention:
+    permissions:
+      contents: read
+      packages: write
+    uses: Pernix-Labs/pernix-ci/.github/workflows/image-retention.yml@v1.0.0
+    with:
+      dry-run: ${{ inputs.dry-run || false }}
