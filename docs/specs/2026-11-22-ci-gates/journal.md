@@ -12,3 +12,40 @@ run: run_a8b3941a3577
 - 2026-11-22T19:20:26Z gate — ask gate_d65a6cbb5dac on task_b03b22d80d04 (status completed): approve tasks.md
 - 2026-11-22T19:20:53Z gate — tasks.md approve (notes: all test-*.yml + lint.yml green on PR before verdict ask; @sha external-caller variant moved to P6, no TODO in code -> task 10 header-comment line removed)
 - 2026-11-22T19:21:21Z dag-materialized — 10 created, 0 replaced, 0 orphaned, 0 unchanged (map: .claude/orca-spec/runs/run_a8b3941a3577/dag-map.json)
+- 2026-11-22T19:22:58Z worker_done — coord 2, sha 6e2f248cdebd545be35979b95e30918bc7a15234
+- 2026-11-22T19:22:58Z verify-minted — coord 2 round 1, task task_5da2ccf17ff7
+- 2026-11-22T19:23:17Z worker_done — coord 1, sha e6d6a1fc702f9a3b42a15f39e9bfa6e17651bed6
+- 2026-11-22T19:23:17Z verify-minted — coord 1 round 1, task task_daaf7a46a7c4
+- 2026-11-22T19:23:52Z verdict — coord 2 APPROVE
+- 2026-11-22T19:24:15Z verdict — coord 1 APPROVE
+- 2026-11-22T19:26:08Z worker_done — coord 4, sha 10cb1e35677a0aae02f0d89d7ccd7f5e7e8ae72f
+- 2026-11-22T19:26:09Z verify-minted — coord 4 round 1, task task_bb70e157de8e
+- 2026-11-22T19:27:00Z verdict — coord 4 APPROVE
+- 2026-11-22T19:28:52Z worker_done — coord 5, sha 22162d2d4e8d7f459519e607933f2cf6ad1dc882, hashFiles(format(...)) cache key unverified until CI
+- 2026-11-22T19:28:52Z verify-minted — coord 5 round 1, task task_5fe8accf121a
+- 2026-11-22T19:29:47Z verdict — coord 5 APPROVE
+- 2026-11-22T19:30:29Z worker_done — coord 3, sha fb7d3460da4b7275bd45584075d32718a81f7ad3, shallow guard stricter; shallow self-test calls scan.sh directly
+- 2026-11-22T19:30:29Z verify-minted — coord 3 round 1, task task_1546d45b2e3a
+- 2026-11-22T19:31:36Z rework-minted — coord 3 round 1, task task_3628a385fb99
+- 2026-11-22T19:32:14Z worker_done — coord 3, sha 7a7927eae636c626b3dc437f783a87f896d55718, rework: shell: bash on shallow step
+- 2026-11-22T19:32:14Z verify-minted — coord 3 round 2, task task_6df3c80d457c
+- 2026-11-22T19:33:01Z verdict — coord 3 APPROVE
+- 2026-11-22T19:33:51Z worker_done — coord 6, sha 1e18d7fd6e6fb6e20bbdf2acc76d76fb4643b87e
+- 2026-11-22T19:33:52Z verify-minted — coord 6 round 1, task task_3d28fc89b989
+- 2026-11-22T19:35:05Z rework-minted — coord 6 round 1, task task_c785eaea379f
+- 2026-11-22T19:35:40Z worker_done — coord 6, sha 88d91f092ffe58302598bc4c1423b7190639149a, rework: earliest-separator split
+- 2026-11-22T19:35:40Z verify-minted — coord 6 round 2, task task_4843e9ef2bed
+- 2026-11-22T19:36:26Z verdict — coord 6 APPROVE
+- 2026-11-22T19:37:29Z worker_done — coord 7, sha f2a61a5f1207587e7c8f7404b65288023b8539e7, gate.sh adds --no-restore (SDK 10 dotnet list restores implicitly)
+- 2026-11-22T19:37:29Z verify-minted — coord 7 round 1, task task_ea52a37799d2
+- 2026-11-22T19:38:36Z verdict — coord 7 APPROVE
+- 2026-11-22T19:41:40Z worker_done — coord 8, sha 6bc0c7c9f38cd6de909da8444f0cfe081a83b35e, --no-restore; fixture TWAE=false (transitive NU1903)
+- 2026-11-22T19:41:40Z verify-minted — coord 8 round 1, task task_14daf31d052d
+- 2026-11-22T19:42:44Z verdict — coord 8 APPROVE
+- 2026-11-22T19:57:23Z worker_done — coord 9, sha a764c7a13667329dead28798fb8231c3cebe50bb, auto-detect matches xunit.v3.core.mtp-*; vstest fixture IsTestingPlatformApplication=false
+- 2026-11-22T19:57:23Z verify-minted — coord 9 round 1, task task_e5bc10a0d300
+- 2026-11-22T19:58:52Z verdict — coord 9 APPROVE
+- 2026-11-22T19:59:51Z worker_done — coord 10, sha b0aee2268982373c07c79cd061f7e3d1bd483caf
+- 2026-11-22T19:59:51Z verify-minted — coord 10 round 1, task task_be59afca3934
+- 2026-11-22T20:00:40Z verdict — coord 10 APPROVE
+- 2026-11-22T20:02:31Z closeout — all 10 coords approved; closeout sweep aa9af8c
