@@ -49,3 +49,4 @@ run: run_a8b3941a3577
 - 2026-11-22T19:59:51Z verify-minted — coord 10 round 1, task task_be59afca3934
 - 2026-11-22T20:00:40Z verdict — coord 10 APPROVE
 - 2026-11-22T20:02:31Z closeout — all 10 coords approved; closeout sweep aa9af8c
+- 2026-11-22T20:08:42Z note — closeout review: no blockers; rework for WarningsAsMessages denylist, NU1900 fail-closed, secret-scan allowlist README note
