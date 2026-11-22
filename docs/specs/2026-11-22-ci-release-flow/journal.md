@@ -72,3 +72,5 @@ run: run_db1582f36196
 - 2026-11-22T21:27:11Z verdict — coord 14 APPROVE
 - 2026-11-22T21:27:25Z note — all 14 coords approved; closeout worker task_709a677fb750 started
 - 2026-11-22T21:28:53Z closeout — closeout worker 93e0e87 (ADR 0008 cite, ADR 0012 PR #3 evidence); design.md as-built note waived (frozen; deviations in ADR 0008/README/journal)
+- 2026-11-22T21:31:06Z note — closeout review: 2 major (reuse skips NuGet gate for published packages; scanned vs promoted digest not pinned), 3 minor validation fixes -> rework task_4b7fd8048210
+- 2026-11-22T21:33:32Z note — review rework 43572ad merged on branch (F1-F5); C checked cd.yml digest pin diff
