@@ -1,0 +1,72 @@
+name: test-nuget-pack
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 8.0.x
+
+      - id: pack
+        name: Pack fixture at 1.2.3-rc.1
+        uses: ./actions/nuget-pack
+        with:
+          projects: tests/fixtures/nuget-pack/Fixture.Lib/Fixture.Lib.csproj
+          version: 1.2.3-rc.1
+          output-dir: ${{ runner.temp }}/nuget-ok
+
+      - name: Assert version override and outputs
+        env:
+          PACKAGES: ${{ steps.pack.outputs.packages }}
+          COUNT: ${{ steps.pack.outputs.package-count }}
+          OUT: ${{ steps.pack.outputs.output-dir }}
+        run: |
+          [[ "$COUNT" == "1" ]] || { echo "::error::expected package-count=1, got '${COUNT}'"; exit 1; }
+          [[ "$OUT" == /* && -d "$OUT" ]] || { echo "::error::output-dir not absolute dir: '${OUT}'"; exit 1; }
+          pkg="$(head -n1 <<<"$PACKAGES")"
+          [[ "$pkg" == "$OUT"/*.nupkg && -f "$pkg" ]] || { echo "::error::bad package path '${pkg}'"; exit 1; }
+          [[ "$(basename "$pkg")" == "Pernix.Ci.Fixture.Lib.1.2.3-rc.1.nupkg" ]] || { echo "::error::unexpected file name '${pkg}'"; exit 1; }
+          version="$(unzip -p "$pkg" '*.nuspec' | sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p')"
+          [[ "$version" == "1.2.3-rc.1" ]] || { echo "::error::nuspec version '${version}' != 1.2.3-rc.1"; exit 1; }
+
+      - id: bad-version
+        name: Leading v must fail
+        continue-on-error: true
+        uses: ./actions/nuget-pack
+        with:
+          projects: tests/fixtures/nuget-pack/Fixture.Lib/Fixture.Lib.csproj
+          version: v1.2.3
+          output-dir: ${{ runner.temp }}/nuget-bad-version
+
+      - name: Assert leading v failed
+        env:
+          OUTCOME: ${{ steps.bad-version.outcome }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure for v1.2.3, got '${OUTCOME}'"; exit 1; }
+
+      - id: non-empty
+        name: Non-empty output-dir must fail
+        continue-on-error: true
+        uses: ./actions/nuget-pack
+        with:
+          projects: tests/fixtures/nuget-pack/Fixture.Lib/Fixture.Lib.csproj
+          version: 1.2.3
+          output-dir: ${{ steps.pack.outputs.output-dir }}
+
+      - name: Assert non-empty output-dir failed
+        env:
+          OUTCOME: ${{ steps.non-empty.outcome }}
+        run: |
+          [[ "$OUTCOME" == "failure" ]] || { echo "::error::expected failure for non-empty output-dir, got '${OUTCOME}'"; exit 1; }
