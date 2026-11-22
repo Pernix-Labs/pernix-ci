@@ -66,6 +66,10 @@ class CheckArgsTest(unittest.TestCase):
         self.assertRejected("-p: NoWarn =CS0168")
         self.assertRejected('-p:"NoWarn=CS0168"')
 
+    def test_equals_separator_with_colon_in_later_value(self):
+        self.assertRejected("-p=NoWarn=CS0168;X=a:b")
+        self.assertRejected("--property=TreatWarningsAsErrors=false;Y=c:d")
+
     def test_bare_property_switch_checks_next_arg(self):
         self.assertRejected("-p", "NoWarn=CS0168")
         self.assertRejected("--property", "TargetFramework=net8.0")

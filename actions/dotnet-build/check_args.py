@@ -44,10 +44,12 @@ def _split_switch(arg):
     for prefix in ("--", "-", "/"):
         if arg.startswith(prefix) and len(arg) > len(prefix):
             body = arg[len(prefix):]
-            for sep in (":", "="):
-                if sep in body:
-                    name, value = body.split(sep, 1)
-                    return name.lower(), value
+            # Split at the earliest ':' or '=' so a value containing the
+            # other separator cannot leak into the switch name.
+            positions = [i for i in (body.find(":"), body.find("=")) if i >= 0]
+            if positions:
+                i = min(positions)
+                return body[:i].lower(), body[i + 1:]
             return body.lower(), None
     return None
 
