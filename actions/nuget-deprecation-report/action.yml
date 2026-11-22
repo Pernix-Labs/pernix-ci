@@ -1,0 +1,27 @@
+name: nuget-deprecation-report
+description: Report deprecated NuGet packages (direct and transitive). Never fails on deprecations.
+
+inputs:
+  working-directory:
+    description: Directory that holds the solution or project.
+    required: false
+    default: .
+  project:
+    description: Solution or project path relative to working-directory. Empty means auto-detect (one *.slnx, else one *.sln, else one *.csproj).
+    required: false
+    default: ""
+
+outputs:
+  deprecated-count:
+    description: Number of unique deprecated packages (package + resolved version).
+    value: ${{ steps.report.outputs.deprecated-count }}
+
+runs:
+  using: composite
+  steps:
+    - id: report
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_PROJECT: ${{ inputs.project }}
+      run: '"${{ github.action_path }}/report.sh"'

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "parameters": "--deprecated --include-transitive",
+  "problems": [
+    {
+      "project": "/home/runner/work/app/src/Lib/Lib.csproj",
+      "level": "error",
+      "text": "No assets file was found for `/home/runner/work/app/src/Lib/Lib.csproj`. Run restore before running this command."
+    }
+  ],
+  "sources": [
+    "https://api.nuget.org/v3/index.json"
+  ],
+  "projects": [
+    {
+      "path": "/home/runner/work/app/src/Lib/Lib.csproj"
+    }
+  ]
+}
