@@ -1,0 +1,118 @@
+name: test-dotnet-build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: check_args unit tests
+        run: python3 -I -m unittest discover -s tests/unit/dotnet-build
+      - name: _shared unit tests
+        run: python3 -I -m unittest discover -s tests/unit/_shared
+
+  strict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict
+          dotnet-version: 8.0.x
+      - uses: ./actions/dotnet-restore
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict
+      - id: run
+        uses: ./actions/dotnet-build
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict
+      - name: assert project output and both TargetFrameworks built
+        env:
+          PROJECT: ${{ steps.run.outputs.project }}
+        run: |
+          set -euo pipefail
+          [[ "$PROJECT" == strict.slnx ]] || { echo "::error::expected project 'strict.slnx', got '$PROJECT'"; exit 1; }
+          for tfm in net8.0 net10.0; do
+            dll="tests/fixtures/dotnet-build/strict/src/Lib/bin/Release/$tfm/Lib.dll"
+            [[ -f "$dll" ]] || { echo "::error::expected $dll"; exit 1; }
+          done
+
+  strict-version-arg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict
+          dotnet-version: 8.0.x
+      - uses: ./actions/dotnet-restore
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict
+      - uses: ./actions/dotnet-build
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict
+          build-args: -p:Version=1.2.3
+
+  strict-warning-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict-warning
+          dotnet-version: 8.0.x
+      - uses: ./actions/dotnet-restore
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict-warning
+      - id: run
+        uses: ./actions/dotnet-build
+        continue-on-error: true
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict-warning
+      - name: assert failed
+        if: steps.run.outcome != 'failure'
+        run: echo "::error::expected failure" && exit 1
+
+  forbidden-arg-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict-warning
+          dotnet-version: 8.0.x
+      - uses: ./actions/dotnet-restore
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict-warning
+      - id: run
+        uses: ./actions/dotnet-build
+        continue-on-error: true
+        with:
+          working-directory: tests/fixtures/dotnet-build/strict-warning
+          build-args: -p:NoWarn=CS0168
+      - name: assert failed before build
+        env:
+          PROJECT: ${{ steps.run.outputs.project }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$OUTCOME" == failure ]] || { echo "::error::expected failure"; exit 1; }
+          [[ -z "$PROJECT" ]] || { echo "::error::expected no project output, build was reached"; exit 1; }
+          [[ ! -d tests/fixtures/dotnet-build/strict-warning/src/Lib/bin ]] || { echo "::error::bin/ exists, build ran"; exit 1; }
