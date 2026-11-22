@@ -52,12 +52,17 @@ jobs:
         with:
           working-directory: tests/fixtures/dotnet-setup/no-global-json
           dotnet-version: 10.0.x
-      - name: assert SDK 10 resolved
+      - name: assert SDK 10 installed and output matches resolved SDK
+        working-directory: tests/fixtures/dotnet-setup/no-global-json
         env:
           RESOLVED: ${{ steps.run.outputs.dotnet-version }}
         run: |
           set -euo pipefail
-          [[ "$RESOLVED" == 10.* ]] || { echo "::error::expected 10.x SDK, got '$RESOLVED'"; exit 1; }
+          echo "dotnet-version=$RESOLVED"
+          dotnet --list-sdks | tee sdks.txt
+          grep -q '^10\.0\.' sdks.txt || { echo "::error::expected a 10.0.x SDK installed"; exit 1; }
+          ACTUAL="$(dotnet --version)"
+          [[ "$RESOLVED" == "$ACTUAL" ]] || { echo "::error::expected output '$ACTUAL' (dotnet --version), got '$RESOLVED'"; exit 1; }
 
   neither-fails:
     runs-on: ubuntu-latest
