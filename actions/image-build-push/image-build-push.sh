@@ -2,7 +2,7 @@
 # image-build-push: prepare build inputs + registry login, then publish outputs.
 #
 # Usage:
-#   image-build-push.sh prepare   # validate, compute tag/labels/build-args/cache, docker login
+#   image-build-push.sh prepare   # validate, compute tag/labels/build-args/cache, docker login (push=true only)
 #   image-build-push.sh outputs   # validate digest, write image/tag/digest/ref outputs
 #
 # All inputs arrive via environment variables (see action.yml). Never `set -x`.
@@ -48,7 +48,7 @@ set_output_multiline() {
 cmd_prepare() {
   local image="${IMAGE:-}" context="${CONTEXT:-}" dockerfile="${DOCKERFILE:-}"
   local sha="${SHA:-}" version="${VERSION:-}" build_args="${BUILD_ARGS:-}"
-  local platforms="${PLATFORMS:-}" cache="${CACHE:-}" source_url="${SOURCE_URL:-}"
+  local platforms="${PLATFORMS:-}" cache="${CACHE:-}" push="${PUSH:-true}" source_url="${SOURCE_URL:-}"
   local registry_token="${REGISTRY_TOKEN:-}" registry_username="${REGISTRY_USERNAME:-}"
 
   # --- validate (no side effects before this block completes) ---
@@ -80,11 +80,21 @@ cmd_prepare() {
     *) fail "input 'cache' must be 'true' or 'false', got '${cache}'" ;;
   esac
 
+  case "$push" in
+    true | false) ;;
+    *) fail "input 'push' must be 'true' or 'false', got '${push}'" ;;
+  esac
+  if [[ "$push" == "false" && "$platforms" == *,* ]]; then
+    fail "input 'platforms' must be a single platform when 'push' is false (docker load), got '${platforms}'"
+  fi
+
   require source-url "$source_url"
   [[ "$source_url" =~ ^https?://[^[:space:]]+$ ]] || fail "input 'source-url' must be an http(s) URL, got '${source_url}'"
 
-  require registry-token "$registry_token"
-  require registry-username "$registry_username"
+  if [[ "$push" == "true" ]]; then
+    require registry-token "$registry_token"
+    require registry-username "$registry_username"
+  fi
 
   local user_args="" line
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -125,23 +135,31 @@ BUILD_COMMIT=${sha}"
   set_output_multiline build-args "$all_args"
 
   # --- side effect: registry login (creds persist in ~/.docker/config.json, D12) ---
-  printf '%s' "$registry_token" | docker login ghcr.io --username "$registry_username" --password-stdin >/dev/null ||
-    fail "docker login to ghcr.io failed for user '${registry_username}'"
+  if [[ "$push" == "true" ]]; then
+    printf '%s' "$registry_token" | docker login ghcr.io --username "$registry_username" --password-stdin >/dev/null ||
+      fail "docker login to ghcr.io failed for user '${registry_username}'"
+  fi
 
   echo "Prepared ${image}:${tag} (version ${effective_version}, cache ${cache})"
 }
 
 cmd_outputs() {
-  local image="${IMAGE:-}" tag="${TAG:-}" digest="${DIGEST:-}"
+  local image="${IMAGE:-}" tag="${TAG:-}" digest="${DIGEST:-}" push="${PUSH:-true}"
 
   require image "$image"
   require tag "$tag"
   [[ "$digest" =~ $DIGEST_RE ]] || fail "build-push did not return a valid digest for ${image}:${tag}, got '${digest}'"
 
+  # push=false: nothing is in the registry, so ref is the local tag, digest the local image id.
+  local ref="${image}@${digest}"
+  if [[ "$push" == "false" ]]; then
+    ref="${image}:${tag}"
+  fi
+
   set_output image "$image"
   set_output tag "$tag"
   set_output digest "$digest"
-  set_output ref "${image}@${digest}"
+  set_output ref "$ref"
 
   {
     echo "### image-build-push"
