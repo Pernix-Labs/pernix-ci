@@ -274,3 +274,11 @@ One workflow per block, `.github/workflows/test-<block-name>.yml`, `on: pull_req
 - ADRs: none (NG4). Decisions D1–D14 above; P6 consolidates.
 - Related specs: P4 ci-gates (parallel, shared repo conventions), P6 CI/CD workflows (consumer).
 - Architecture docs: none in P5.
+
+## As-built notes (closeout)
+
+Changes that landed after approval. Where these differ from the body above (image-retention Logic steps 5-6, D11, Error Handling #13), these notes supersede it.
+
+- **AB1. image-retention order (307f17a).** Last-version guard runs before child protection, so children of the version the guard keeps are protected too. Body steps 5 and 6 run in reverse order.
+- **AB2. Self-test leftover check (d986d86, 051f486).** Every image self-test (`test-image-{exists,build-push,scan,promote,retention}.yml`) ends with a `leftover-check` job (`if: always()`, `permissions: packages: read`). It does one `GET {base}/packages/container/<pkg>` per per-run selftest package (base per owner rule). `404` = clean. `200` or any other status = fail. Per-package lookup because `GITHUB_TOKEN` gets HTTP 400 on the org package list endpoint. Extends D11.
+- **AB3. nuget-push dry-run duplicates.** Local folder feeds ignore `--skip-duplicate` (`dotnet` warns) and overwrite an existing version, so dry-run re-pushes always succeed. Stated in `actions/nuget-push/README.md`. Error Handling #13 applies to nuget.org only.
