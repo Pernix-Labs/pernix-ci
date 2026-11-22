@@ -1,0 +1,107 @@
+name: image-scan
+description: Trivy vulnerability + secret scan of a pushed GHCR image ref. Fails on fail-severities or any secret.
+
+inputs:
+  image-ref:
+    description: Image to scan, ghcr.io only, with tag or digest (e.g. ghcr.io/pernix-labs/foo:sha-<sha> or ghcr.io/pernix-labs/foo@sha256:<digest>).
+    required: true
+  fail-severities:
+    description: Comma-separated vulnerability severities that fail the block (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL). Any secret always fails.
+    required: false
+    default: HIGH,CRITICAL
+  ignore-file:
+    description: Path to a .trivyignore file. Empty means none.
+    required: false
+    default: ""
+  ignore-unfixed:
+    description: Skip vulnerabilities without a fixed version (true|false).
+    required: false
+    default: "false"
+  upload-sarif:
+    description: Upload SARIF to code scanning (true|false). Requires security-events write.
+    required: false
+    default: "false"
+  sarif-category:
+    description: Code scanning category for the SARIF upload.
+    required: false
+    default: image-scan
+  registry-token:
+    description: Token for pulling the image from ghcr.io.
+    required: false
+    default: ${{ github.token }}
+  registry-username:
+    description: Username for pulling the image from ghcr.io.
+    required: false
+    default: ${{ github.actor }}
+
+outputs:
+  critical-count:
+    description: Number of CRITICAL vulnerabilities.
+    value: ${{ steps.scan.outputs.critical-count }}
+  high-count:
+    description: Number of HIGH vulnerabilities.
+    value: ${{ steps.scan.outputs.high-count }}
+  medium-count:
+    description: Number of MEDIUM vulnerabilities.
+    value: ${{ steps.scan.outputs.medium-count }}
+  low-count:
+    description: Number of LOW vulnerabilities.
+    value: ${{ steps.scan.outputs.low-count }}
+  secret-count:
+    description: Number of secrets found in image layers.
+    value: ${{ steps.scan.outputs.secret-count }}
+  sarif-file:
+    description: Absolute path of the SARIF report (vulnerabilities + secrets, secret values stripped).
+    value: ${{ steps.scan.outputs.sarif-file }}
+  result:
+    description: pass or fail.
+    value: ${{ steps.scan.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute Trivy DB cache key
+      id: cache-key
+      shell: bash
+      run: echo "key=trivy-db-$(date -u +%Y-%m-%d)" >>"$GITHUB_OUTPUT"
+
+    - name: Cache Trivy DB
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/trivy/db
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: trivy-db-
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        IMAGE_REF: ${{ inputs.image-ref }}
+        FAIL_SEVERITIES: ${{ inputs.fail-severities }}
+        IGNORE_FILE: ${{ inputs.ignore-file }}
+        IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+        UPLOAD_SARIF: ${{ inputs.upload-sarif }}
+        SARIF_CATEGORY: ${{ inputs.sarif-category }}
+        REGISTRY_TOKEN: ${{ inputs.registry-token }}
+        REGISTRY_USERNAME: ${{ inputs.registry-username }}
+      run: '"$GITHUB_ACTION_PATH/image-scan.sh" scan'
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-file }}
+        category: ${{ inputs.sarif-category }}
+
+    - name: Enforce
+      shell: bash
+      env:
+        RESULT: ${{ steps.scan.outputs.result }}
+        IMAGE_REF: ${{ inputs.image-ref }}
+        FAIL_SEVERITIES: ${{ steps.scan.outputs.fail-severities }}
+        CRITICAL_COUNT: ${{ steps.scan.outputs.critical-count }}
+        HIGH_COUNT: ${{ steps.scan.outputs.high-count }}
+        MEDIUM_COUNT: ${{ steps.scan.outputs.medium-count }}
+        LOW_COUNT: ${{ steps.scan.outputs.low-count }}
+        SECRET_COUNT: ${{ steps.scan.outputs.secret-count }}
+      run: '"$GITHUB_ACTION_PATH/image-scan.sh" enforce'
