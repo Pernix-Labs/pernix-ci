@@ -1,6 +1,6 @@
 # image-scan
 
-Scans a pushed GHCR image with Trivy, pulling it from the registry (`--image-src remote`, no local build). One Trivy run covers both the `vuln` and `secret` scanners.
+Scans a GHCR image with Trivy. By default it pulls the pushed image from the registry (`image-source: remote`, `--image-src remote`). With `image-source: docker` it reads an image already in the runner's Docker daemon (`--image-src docker`) under the same `ghcr.io/...` ref, so an image can be scanned before it is pushed. One Trivy run covers both the `vuln` and `secret` scanners.
 
 - Fails if any vulnerability has a severity in `fail-severities` (default `HIGH,CRITICAL`).
 - Fails if any secret is found in image layers, regardless of `fail-severities`.
@@ -17,13 +17,14 @@ Trivy `v0.76.2` is pinned in `image-scan.sh` by version and sha256. The block do
 | Name | Required | Default | Description |
 |---|---|---|---|
 | `image-ref` | yes | | Image with tag or digest. Must be lowercase `ghcr.io/<owner>/<name>:<tag>` or `ghcr.io/<owner>/<name>@sha256:<digest>`. |
+| `image-source` | no | `remote` | `remote` pulls `image-ref` from `ghcr.io`. `docker` reads `image-ref` from the local Docker daemon and passes no registry credentials. Any other value fails before the scan. |
 | `fail-severities` | no | `HIGH,CRITICAL` | Comma-separated severities that fail the block. Allowed: `UNKNOWN`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. |
 | `ignore-file` | no | empty | Path to a `.trivyignore` file. |
 | `ignore-unfixed` | no | `false` | `true` skips vulnerabilities without a fixed version. |
 | `upload-sarif` | no | `false` | `true` uploads the SARIF file to code scanning. |
 | `sarif-category` | no | `image-scan` | Code scanning category for the upload. |
-| `registry-token` | no | `${{ github.token }}` | Token for pulling the image from `ghcr.io`. Passed to Trivy as `TRIVY_PASSWORD`. |
-| `registry-username` | no | `${{ github.actor }}` | Username for `ghcr.io`. Passed to Trivy as `TRIVY_USERNAME`. |
+| `registry-token` | no | `${{ github.token }}` | Token for pulling the image from `ghcr.io`. Passed to Trivy as `TRIVY_PASSWORD`. Unused with `image-source: docker`. |
+| `registry-username` | no | `${{ github.actor }}` | Username for `ghcr.io`. Passed to Trivy as `TRIVY_USERNAME`. Unused with `image-source: docker`. |
 
 Invalid inputs fail with `::error::` naming the input before Trivy is installed.
 
@@ -51,6 +52,8 @@ The step summary shows counts per severity, the secret count on its own line, th
 permissions:
   packages: read
 ```
+
+With `image-source: docker` the block needs no `packages` permission.
 
 With `upload-sarif: true`:
 

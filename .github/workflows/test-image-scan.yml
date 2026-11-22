@@ -130,6 +130,74 @@ jobs:
           grep -qF 'github-pat' "$summary" || fail "secret: summary lacks rule ID github-pat"
           echo "All image-scan assertions passed"
 
+  scan-local:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build fixture images locally (no push)
+        id: build
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/pernix-labs/pernix-ci-selftest-image-scan-local"
+          run="${RUN_ID}-${RUN_ATTEMPT}"
+          docker build -t "${image}:${run}-clean" tests/fixtures/image-scan/clean
+          docker build -t "${image}:${run}-vulnerable" tests/fixtures/image-scan/vulnerable
+          echo "clean=${image}:${run}-clean" >>"$GITHUB_OUTPUT"
+          echo "vulnerable=${image}:${run}-vulnerable" >>"$GITHUB_OUTPUT"
+
+      - name: Invalid image-source fails before scan
+        id: bad-source
+        continue-on-error: true
+        uses: ./actions/image-scan
+        with:
+          image-ref: ${{ steps.build.outputs.clean }}
+          image-source: daemon
+
+      - name: Scan local clean fixture
+        id: clean
+        uses: ./actions/image-scan
+        with:
+          image-ref: ${{ steps.build.outputs.clean }}
+          image-source: docker
+
+      - name: Scan local vulnerable fixture
+        id: vulnerable
+        continue-on-error: true
+        uses: ./actions/image-scan
+        with:
+          image-ref: ${{ steps.build.outputs.vulnerable }}
+          image-source: docker
+
+      - name: Assert results
+        env:
+          BAD_SOURCE_OUTCOME: ${{ steps.bad-source.outcome }}
+          BAD_SOURCE_RESULT: ${{ steps.bad-source.outputs.result }}
+          CLEAN_RESULT: ${{ steps.clean.outputs.result }}
+          CLEAN_SECRETS: ${{ steps.clean.outputs.secret-count }}
+          VULN_OUTCOME: ${{ steps.vulnerable.outcome }}
+          VULN_RESULT: ${{ steps.vulnerable.outputs.result }}
+          VULN_HIGH: ${{ steps.vulnerable.outputs.high-count }}
+          VULN_CRITICAL: ${{ steps.vulnerable.outputs.critical-count }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$BAD_SOURCE_OUTCOME" == "failure" ]] || fail "invalid image-source: expected failure, got '$BAD_SOURCE_OUTCOME'"
+          [[ -z "$BAD_SOURCE_RESULT" ]] || fail "invalid image-source: expected no result, got '$BAD_SOURCE_RESULT'"
+          [[ "$CLEAN_RESULT" == "pass" ]] || fail "local clean: expected result=pass, got '$CLEAN_RESULT'"
+          [[ "$CLEAN_SECRETS" == "0" ]] || fail "local clean: expected secret-count=0, got '$CLEAN_SECRETS'"
+          [[ "$VULN_OUTCOME" == "failure" ]] || fail "local vulnerable: expected failure, got '$VULN_OUTCOME'"
+          [[ "$VULN_RESULT" == "fail" ]] || fail "local vulnerable: expected result=fail, got '$VULN_RESULT'"
+          (( ${VULN_HIGH:-0} + ${VULN_CRITICAL:-0} > 0 )) ||
+            fail "local vulnerable: expected high-count+critical-count>0, got high='$VULN_HIGH' critical='$VULN_CRITICAL'"
+          echo "All image-scan local (image-source: docker) assertions passed"
+
   cleanup:
     needs: [scan]
     if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
