@@ -1,0 +1,47 @@
+name: image-promote
+description: Add tags to an existing GHCR manifest by byte-identical registry-side copy. No rebuild, no layer transfer.
+
+inputs:
+  image:
+    description: Full image name without tag, e.g. ghcr.io/pernix-labs/my-svc. Host must be ghcr.io.
+    required: true
+  source-tag:
+    description: Existing tag to promote, e.g. sha-<40 hex>.
+    required: true
+  tags:
+    description: Newline list of target tags, e.g. 1.2.3 and v1.2.3.
+    required: true
+  allow-overwrite:
+    description: '"true" to move a target tag that already points to a different digest.'
+    required: false
+    default: 'false'
+  registry-token:
+    description: Token for GHCR (needs packages:write).
+    required: false
+    default: ${{ github.token }}
+  registry-username:
+    description: Username for GHCR token exchange.
+    required: false
+    default: ${{ github.actor }}
+
+outputs:
+  digest:
+    description: Source manifest digest (sha256:...). Every target tag resolves to it.
+    value: ${{ steps.promote.outputs.digest }}
+  tags:
+    description: Newline list of target tags now at digest.
+    value: ${{ steps.promote.outputs.tags }}
+
+runs:
+  using: composite
+  steps:
+    - id: promote
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        SOURCE_TAG: ${{ inputs.source-tag }}
+        TAGS: ${{ inputs.tags }}
+        ALLOW_OVERWRITE: ${{ inputs.allow-overwrite }}
+        REGISTRY_TOKEN: ${{ inputs.registry-token }}
+        REGISTRY_USERNAME: ${{ inputs.registry-username }}
+      run: bash "$GITHUB_ACTION_PATH/image-promote.sh"

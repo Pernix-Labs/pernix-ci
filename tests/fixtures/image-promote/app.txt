@@ -1,0 +1,1 @@
+pernix-ci image-promote self-test fixture
