@@ -1,0 +1,212 @@
+name: test-release-ci
+
+# Self-test of reusable ci.yml on the release-flow fixture (Req 8.4, 8.6, 8.9).
+# ci-build pushes sha-<L> to a per-run package, ci-reuse finds and reuses it,
+# ci-local builds and scans without pushing to a separate per-run package name
+# that must never appear. A same-repo pull_request run that passes ci.yml's
+# "Guard pernix-ci self-pin" and "Checkout pernix-ci" steps confirms
+# job.workflow_sha for same-repo calls (docs/adr/0012-reusable-workflow-self-pinning.md).
+# push-image uses ${{ 'true' }} form: actionlint 1.7.12 reads a quoted 'true' as bool.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: echo "::notice::Fork PR without packages:write. release-flow CI registry self-tests (ci-build, ci-reuse) skipped. ci-local runs."
+
+  ci-build:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      working-directory: tests/fixtures/release-flow/repo
+      push-image: ${{ 'true' }}
+      image-name-prefix: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-
+
+  assert-build:
+    needs: ci-build
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Assert svc built and pushed (reused=false)
+        env:
+          UNITS: ${{ needs.ci-build.outputs.units }}
+          OWNER: ${{ github.repository_owner }}
+          PKG: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-svc
+        run: |
+          set -euo pipefail
+          echo "$UNITS" | jq .
+          svc="$(jq -ce '.[] | select(.name == "svc")' <<<"$UNITS")" || { echo "::error::unit svc missing from ci outputs"; exit 1; }
+          jq -e '.[] | select(.name == "lib")' <<<"$UNITS" >/dev/null || { echo "::error::unit lib missing from ci outputs"; exit 1; }
+          reused="$(jq -r .reused <<<"$svc")"
+          ref="$(jq -r '.["image-ref"]' <<<"$svc")"
+          [[ "$reused" == "false" ]] || { echo "::error::svc reused='${reused}', expected false on first build"; exit 1; }
+          re="^ghcr\.io/${OWNER,,}/${PKG}@sha256:[0-9a-f]{64}$"
+          [[ "$ref" =~ $re ]] || { echo "::error::svc image-ref '${ref}' does not match ${re}"; exit 1; }
+
+  ci-reuse:
+    needs: [ci-build, assert-build]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      working-directory: tests/fixtures/release-flow/repo
+      push-image: ${{ 'true' }}
+      image-name-prefix: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-
+
+  assert-reuse:
+    needs: [ci-build, ci-reuse]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Assert svc reused (reused=true, same image-ref)
+        env:
+          BUILD_UNITS: ${{ needs.ci-build.outputs.units }}
+          REUSE_UNITS: ${{ needs.ci-reuse.outputs.units }}
+        run: |
+          set -euo pipefail
+          echo "$REUSE_UNITS" | jq .
+          build="$(jq -ce '.[] | select(.name == "svc")' <<<"$BUILD_UNITS")"
+          reuse="$(jq -ce '.[] | select(.name == "svc")' <<<"$REUSE_UNITS")" || { echo "::error::unit svc missing from ci-reuse outputs"; exit 1; }
+          reused="$(jq -r .reused <<<"$reuse")"
+          [[ "$reused" == "true" ]] || { echo "::error::svc reused='${reused}', expected true on second run"; exit 1; }
+          b_l="$(jq -r '.["last-touch-sha"]' <<<"$build")"
+          r_l="$(jq -r '.["last-touch-sha"]' <<<"$reuse")"
+          [[ "$b_l" == "$r_l" ]] || { echo "::error::last-touch-sha changed between runs: '${b_l}' -> '${r_l}'"; exit 1; }
+          b_ref="$(jq -r '.["image-ref"]' <<<"$build")"
+          r_ref="$(jq -r '.["image-ref"]' <<<"$reuse")"
+          [[ "$b_ref" == "$r_ref" ]] || { echo "::error::image-ref changed on reuse: '${b_ref}' -> '${r_ref}'"; exit 1; }
+
+  ci-local:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      working-directory: tests/fixtures/release-flow/repo
+      push-image: ${{ 'false' }}
+      image-name-prefix: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-local-
+
+  assert-local:
+    needs: ci-local
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Assert svc built locally (image-ref empty)
+        env:
+          UNITS: ${{ needs.ci-local.outputs.units }}
+        run: |
+          set -euo pipefail
+          echo "$UNITS" | jq .
+          svc="$(jq -ce '.[] | select(.name == "svc")' <<<"$UNITS")" || { echo "::error::unit svc missing from ci-local outputs"; exit 1; }
+          reused="$(jq -r .reused <<<"$svc")"
+          ref="$(jq -r '.["image-ref"]' <<<"$svc")"
+          [[ "$reused" == "false" ]] || { echo "::error::svc reused='${reused}', expected false with push-image=false"; exit 1; }
+          [[ -z "$ref" ]] || { echo "::error::svc image-ref '${ref}', expected empty with push-image=false"; exit 1; }
+
+      - name: Assert nothing pushed
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          PKG: pernix-ci-selftest-release-flow-${{ github.run_id }}-${{ github.run_attempt }}-local-svc
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          if [[ "$(gh api "/users/${owner}" --jq .type)" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
+          out="$(mktemp)"
+          gh api -i "${base}/packages/container/${PKG}" >"$out" 2>/dev/null || true
+          status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+          case "$status" in
+            404) echo "::notice::package ${PKG} absent, push-image=false pushed nothing" ;;
+            200) echo "::error::package ${PKG} exists although push-image=false"; exit 1 ;;
+            *) echo "::error::lookup for ${PKG} returned HTTP ${status:-unknown}, cannot confirm nothing was pushed"; exit 1 ;;
+          esac
+
+  cleanup:
+    needs: [ci-build, assert-build, ci-reuse, assert-reuse, ci-local, assert-local]
+    if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete per-run selftest packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          if [[ "$(gh api "users/${owner}" --jq .type)" == "Organization" ]]; then
+            base="orgs/${owner}"
+          else
+            base="users/${owner}"
+          fi
+          failed=0
+          for pkg in "pernix-ci-selftest-release-flow-${RUN_ID}-${RUN_ATTEMPT}-svc" "pernix-ci-selftest-release-flow-${RUN_ID}-${RUN_ATTEMPT}-local-svc"; do
+            if ! out="$(gh api -X DELETE "${base}/packages/container/${pkg}" 2>&1)"; then
+              if grep -q 'HTTP 404' <<<"$out"; then
+                echo "::notice::package ${pkg} not found, nothing to delete"
+              else
+                echo "::error::cleanup of ${pkg} failed: ${out}"
+                failed=1
+              fi
+            fi
+          done
+          exit "$failed"
+
+  leftover-check:
+    needs: [cleanup]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: Skip leftover check on fork PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: echo "::notice::Fork PR created no packages. release-flow CI leftover package check skipped."
+
+      - name: Assert no per-run selftest package remains
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          names=(
+            "pernix-ci-selftest-release-flow-${RUN_ID}-${RUN_ATTEMPT}-svc"
+            "pernix-ci-selftest-release-flow-${RUN_ID}-${RUN_ATTEMPT}-local-svc"
+          )
+          kind="$(gh api "/users/${owner}" --jq .type)"
+          if [[ "$kind" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
+          out="$(mktemp)"
+          failed=0
+          for name in "${names[@]}"; do
+            enc="$(jq -rn --arg n "$name" '$n|@uri')"
+            gh api -i "${base}/packages/container/${enc}" >"$out" 2>/dev/null || true
+            status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+            case "$status" in
+              404) echo "::notice::Selftest package ${name} absent" ;;
+              200) echo "::error::Selftest package ${name} exists after run ${RUN_ID} attempt ${RUN_ATTEMPT}"; failed=1 ;;
+              *) echo "::error::Leftover lookup for ${name} returned HTTP ${status:-unknown}, cannot confirm cleanup"; failed=1 ;;
+            esac
+          done
+          exit "$failed"
