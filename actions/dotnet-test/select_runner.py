@@ -7,7 +7,8 @@ Usage:
       Microsoft.Testing.Platform (ignore case), else `vstest`.
   select_runner.py trx-format <working-directory> <auto|mtp|xunit>
       Prints `mtp` (--report-trx) or `xunit` (--report-xunit-trx).
-      `auto` scans */obj/*/project.assets.json under working-directory for
+      `auto` scans every project.assets.json below an `obj` directory under
+      working-directory for
       MTP test projects (libraries include Microsoft.Testing.Platform/):
       all reference Microsoft.Testing.Extensions.TrxReport -> mtp, else all
       reference xunit.v3.core (or
