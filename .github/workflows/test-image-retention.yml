@@ -1,0 +1,177 @@
+name: test-image-retention
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  remediation-message:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Assert D14 remediation text for org and user owners
+        run: |
+          script=actions/image-retention/image-retention.sh
+          check() {
+            local got="$1" want="$2"
+            [[ "$got" == "$want" ]] || { echo "::error::remediation-message mismatch"; echo "got:  ${got}"; echo "want: ${want}"; exit 1; }
+            grep -q -- '-> Manage Actions access ->' <<<"$got" || { echo "::error::missing 'Manage Actions access' step"; exit 1; }
+          }
+          check "$(bash "$script" remediation-message org pernix-labs my-svc pernix-labs/app)" \
+            "Cannot delete versions of my-svc: pernix-labs/app lacks Admin on the package. Open https://github.com/orgs/pernix-labs/packages/container/my-svc/settings -> Manage Actions access -> grant pernix-labs/app Admin."
+          check "$(bash "$script" remediation-message user octo-user my-svc octo-user/app)" \
+            "Cannot delete versions of my-svc: octo-user/app lacks Admin on the package. Open https://github.com/users/octo-user/packages/container/my-svc/settings -> Manage Actions access -> grant octo-user/app Admin."
+          if bash "$script" remediation-message team pernix-labs my-svc pernix-labs/app >/dev/null; then
+            echo "::error::invalid owner kind accepted"; exit 1
+          fi
+
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: echo "::notice::Fork PR without packages:write. image-retention registry self-test skipped."
+
+  test:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - id: names
+        name: Compute per-run names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          pkg="pernix-ci-selftest-image-retention-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "owner=${owner}"
+            echo "pkg=${pkg}"
+            echo "image=ghcr.io/${owner}/${pkg}"
+            echo "reference-time=$(date -u -d '+30 days' +%Y-%m-%dT%H:%M:%SZ)"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - id: seed
+        name: Seed 7 stable, 2 prerelease, 3 sha-only versions (oldest first)
+        env:
+          IMAGE: ${{ steps.names.outputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          tags=(1.0.0 1.0.1 1.0.2 1.0.3 1.0.4 1.0.5 1.0.6 1.1.0-rc.1 1.1.0-rc.2)
+          for i in 1 2 3; do
+            tags+=("sha-$(printf 'selftest-%s-%s' "$GITHUB_RUN_ID" "$i" | sha1sum | cut -d' ' -f1)")
+          done
+          seed=0
+          for tag in "${tags[@]}"; do
+            seed=$((seed + 1))
+            docker buildx build --push --provenance=false --sbom=false \
+              --build-arg "SEED=${GITHUB_RUN_ID}-${seed}" -t "${IMAGE}:${tag}" tests/fixtures/image-retention
+          done
+          {
+            echo "sha-tags<<EOF"
+            printf '%s\n' "${tags[@]:9}"
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Wait for 12 versions in the Packages API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ steps.names.outputs.owner }}
+          PKG: ${{ steps.names.outputs.pkg }}
+        run: |
+          if [[ "$(gh api "users/${OWNER}" --jq .type)" == "Organization" ]]; then base="orgs/${OWNER}"; else base="users/${OWNER}"; fi
+          echo "BASE=${base}" >>"$GITHUB_ENV"
+          for _ in $(seq 1 12); do
+            n="$(gh api --paginate "${base}/packages/container/${PKG}/versions?per_page=100" | jq -s 'add | length')"
+            [[ "$n" == 12 ]] && exit 0
+            echo "versions listed: ${n}, waiting"
+            sleep 5
+          done
+          echo "::error::expected 12 versions, got ${n}"; exit 1
+
+      - id: dry
+        name: Dry-run at now+30d
+        uses: ./actions/image-retention
+        with:
+          packages: ${{ steps.names.outputs.pkg }}
+          owner: ${{ steps.names.outputs.owner }}
+          dry-run: 'true'
+          reference-time: ${{ steps.names.outputs.reference-time }}
+
+      - name: Assert dry-run plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKG: ${{ steps.names.outputs.pkg }}
+          DELETED_COUNT: ${{ steps.dry.outputs.deleted-count }}
+          KEPT_COUNT: ${{ steps.dry.outputs.kept-count }}
+          DELETED: ${{ steps.dry.outputs.deleted-versions }}
+          SHA_TAGS: ${{ steps.seed.outputs.sha-tags }}
+        run: |
+          [[ "$DELETED_COUNT" == 7 ]] || { echo "::error::planned deleted-count '${DELETED_COUNT}' != 7"; exit 1; }
+          [[ "$KEPT_COUNT" == 5 ]] || { echo "::error::planned kept-count '${KEPT_COUNT}' != 5"; exit 1; }
+          got="$(jq -r '.[].tags[]' <<<"$DELETED" | LC_ALL=C sort)"
+          want="$(printf '%s\n' 1.0.0 1.0.1 1.1.0-rc.1 1.1.0-rc.2 "$SHA_TAGS" | sed '/^$/d' | LC_ALL=C sort)"
+          [[ "$got" == "$want" ]] || { echo "::error::planned deletions differ"; echo "got:"; echo "$got"; echo "want:"; echo "$want"; exit 1; }
+          # Prerelease not counted in keep-5: 1.0.2 is kept although two prereleases are newer.
+          if jq -e 'any(.[].tags[]; . == "1.0.2")' <<<"$DELETED" >/dev/null; then
+            echo "::error::1.0.2 planned for deletion: prereleases counted toward keep-versions"; exit 1
+          fi
+          jq -e --arg p "$PKG" 'all(.[]; .package == $p)' <<<"$DELETED" >/dev/null || { echo "::error::deleted-versions package mismatch"; exit 1; }
+          n="$(gh api --paginate "${BASE}/packages/container/${PKG}/versions?per_page=100" | jq -s 'add | length')"
+          [[ "$n" == 12 ]] || { echo "::error::dry-run changed the package: ${n} versions, expected 12"; exit 1; }
+
+      - id: real
+        name: Real delete at now+30d
+        uses: ./actions/image-retention
+        with:
+          packages: ${{ steps.names.outputs.pkg }}
+          owner: ${{ steps.names.outputs.owner }}
+          reference-time: ${{ steps.names.outputs.reference-time }}
+
+      - name: Assert real delete matches plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKG: ${{ steps.names.outputs.pkg }}
+          PLANNED_COUNT: ${{ steps.dry.outputs.deleted-count }}
+          PLANNED: ${{ steps.dry.outputs.deleted-versions }}
+          DELETED_COUNT: ${{ steps.real.outputs.deleted-count }}
+          DELETED: ${{ steps.real.outputs.deleted-versions }}
+        run: |
+          [[ "$DELETED_COUNT" == "$PLANNED_COUNT" ]] || { echo "::error::deleted-count '${DELETED_COUNT}' != planned '${PLANNED_COUNT}'"; exit 1; }
+          [[ "$(jq -c '[.[].id] | sort' <<<"$DELETED")" == "$(jq -c '[.[].id] | sort' <<<"$PLANNED")" ]] ||
+            { echo "::error::deleted ids differ from planned ids"; exit 1; }
+          left="$(gh api --paginate "${BASE}/packages/container/${PKG}/versions?per_page=100" | jq -s -r '[add[].metadata.container.tags[]] | sort | join(" ")')"
+          [[ "$left" == "1.0.2 1.0.3 1.0.4 1.0.5 1.0.6" ]] || { echo "::error::remaining tags '${left}'"; exit 1; }
+
+      - name: Cleanup selftest package
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ steps.names.outputs.owner }}
+          PKG: ${{ steps.names.outputs.pkg }}
+        run: |
+          [[ -n "$PKG" ]] || exit 0
+          if [[ "$(gh api "users/${OWNER}" --jq .type)" == "Organization" ]]; then
+            base="orgs/${OWNER}"
+          else
+            base="users/${OWNER}"
+          fi
+          if ! out="$(gh api -X DELETE "${base}/packages/container/${PKG}" 2>&1)"; then
+            if grep -q 'HTTP 404' <<<"$out"; then
+              echo "::notice::package ${PKG} not found, nothing to delete"
+            else
+              echo "::error::cleanup of ${PKG} failed: ${out}"
+              exit 1
+            fi
+          fi
