@@ -1,0 +1,53 @@
+name: release-units
+description: Validate the release-unit matrix, resolve each unit's MSBuild closure and inputs, and compute its last-touch sha.
+
+inputs:
+  units-file:
+    description: Matrix file, relative to `working-directory`.
+    required: false
+    default: .github/release-units.yml
+  working-directory:
+    description: Mono-repo root inside the git checkout. Matrix paths are relative to it.
+    required: false
+    default: .
+  solution:
+    description: Solution file, relative to `working-directory`. Empty auto-detects one `*.slnx`, else one `*.sln`.
+    required: false
+    default: ""
+  unit:
+    description: Restrict output to this unit. Empty outputs all units.
+    required: false
+    default: ""
+  owner:
+    description: GHCR owner for image refs (lower-cased).
+    required: false
+    default: ${{ github.repository_owner }}
+  image-name-prefix:
+    description: Prefix prepended to every GHCR package name (self-tests use per-run packages).
+    required: false
+    default: ""
+
+outputs:
+  units:
+    description: JSON array, one object per unit (see README).
+    value: ${{ steps.resolve.outputs.units }}
+  unit-names:
+    description: Newline-separated unit names in output order.
+    value: ${{ steps.resolve.outputs.unit-names }}
+  count:
+    description: Number of units in `units`.
+    value: ${{ steps.resolve.outputs.count }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        INPUT_UNITS_FILE: ${{ inputs.units-file }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_SOLUTION: ${{ inputs.solution }}
+        INPUT_UNIT: ${{ inputs.unit }}
+        INPUT_OWNER: ${{ inputs.owner }}
+        INPUT_IMAGE_NAME_PREFIX: ${{ inputs.image-name-prefix }}
+      run: '"$GITHUB_ACTION_PATH/release-units.sh"'

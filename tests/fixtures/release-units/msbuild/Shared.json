@@ -1,0 +1,10 @@
+{
+  "Properties": {
+    "IsTestProject": "",
+    "IsTestingPlatformApplication": ""
+  },
+  "Items": {
+    "ProjectReference": [],
+    "PackageReference": []
+  }
+}

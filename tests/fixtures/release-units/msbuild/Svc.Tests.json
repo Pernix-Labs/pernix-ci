@@ -1,0 +1,66 @@
+{
+  "Properties": {
+    "IsTestProject": "",
+    "IsTestingPlatformApplication": ""
+  },
+  "Items": {
+    "ProjectReference": [
+      {
+        "Identity": "../../src/Svc/Svc.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "/repo/src/Svc/Svc.csproj",
+        "RootDir": "/",
+        "Filename": "Svc",
+        "Extension": ".csproj",
+        "RelativeDir": "../../src/Svc/",
+        "Directory": "repo/src/Svc/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/repo/tests/Svc.Tests/Svc.Tests.csproj",
+        "DefiningProjectDirectory": "/repo/tests/Svc.Tests/",
+        "DefiningProjectName": "Svc.Tests",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ],
+    "PackageReference": [
+      {
+        "Identity": "Microsoft.Testing.Extensions.TrxReport",
+        "FullPath": "/repo/tests/Svc.Tests/Microsoft.Testing.Extensions.TrxReport",
+        "RootDir": "/",
+        "Filename": "Microsoft.Testing.Extensions",
+        "Extension": ".TrxReport",
+        "RelativeDir": "",
+        "Directory": "repo/tests/Svc.Tests/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/repo/tests/Svc.Tests/Svc.Tests.csproj",
+        "DefiningProjectDirectory": "/repo/tests/Svc.Tests/",
+        "DefiningProjectName": "Svc.Tests",
+        "DefiningProjectExtension": ".csproj"
+      },
+      {
+        "Identity": "xunit.v3",
+        "FullPath": "/repo/tests/Svc.Tests/xunit.v3",
+        "RootDir": "/",
+        "Filename": "xunit",
+        "Extension": ".v3",
+        "RelativeDir": "",
+        "Directory": "repo/tests/Svc.Tests/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/repo/tests/Svc.Tests/Svc.Tests.csproj",
+        "DefiningProjectDirectory": "/repo/tests/Svc.Tests/",
+        "DefiningProjectName": "Svc.Tests",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ]
+  }
+}
