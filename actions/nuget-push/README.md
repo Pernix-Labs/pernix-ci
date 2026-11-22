@@ -54,7 +54,7 @@ The short-lived Trusted Publishing key is passed to `dotnet nuget push --api-key
    - Real: `dotnet nuget push <pkg> --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" [--skip-duplicate]`. `dotnet` pushes an adjacent `.snupkg` automatically.
    - Dry-run: `dotnet nuget push <pkg> --source <local-feed-dir> [--skip-duplicate]`, no key.
 
-The key is passed only through the step's env. It is never echoed, written to a file, or set as an output. The script never uses `set -x`.
+The key reaches the push step through its env and is passed to `dotnet` on the command line (see the security note above). It is never echoed, written to a file, or set as an output. The script never uses `set -x`.
 
 Local folder feeds ignore `--skip-duplicate` (`dotnet` prints a warning) and overwrite an existing version, so dry-run re-pushes always succeed.
 
