@@ -73,3 +73,67 @@ jobs:
       - name: Assert no actions/ at workspace root after blocks
         run: |
           [ ! -e "$GITHUB_WORKSPACE/actions" ] || { echo "::error::$GITHUB_WORKSPACE/actions must not exist"; exit 1; }
+
+  # Same steps as external-caller, blocks resolved from GitHub at a pinned
+  # sha (Req 8.7). Only P4 blocks exist at this sha. Fixtures still come from
+  # the local checkout under pernix-ci/.
+  external-caller-pinned:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: pernix-ci
+          persist-credentials: false
+
+      - name: Assert no actions/ at workspace root
+        run: |
+          [ ! -e "$GITHUB_WORKSPACE/actions" ] || { echo "::error::$GITHUB_WORKSPACE/actions must not exist"; exit 1; }
+
+      - name: Create caller repo
+        run: |
+          set -euo pipefail
+          cp -R pernix-ci/tests/fixtures/dotnet-restore/app caller
+          cd caller
+          git init -q
+          git -c user.name=ci -c user.email=ci@example.invalid add -A
+          git -c user.name=ci -c user.email=ci@example.invalid commit -q -m "caller fixture"
+
+      - uses: Pernix-Labs/pernix-ci/actions/secret-scan@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          scan-mode: full-history
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-setup@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-restore@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/nuget-vulnerability-gate@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/nuget-deprecation-report@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-build@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller
+
+      - name: Create caller test repo
+        run: cp -R pernix-ci/tests/fixtures/dotnet-test/mtp-xunit caller-test
+
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-setup@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller-test
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-restore@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller-test
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-build@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller-test
+      - uses: Pernix-Labs/pernix-ci/actions/dotnet-test@377fbd2bab8e004aada51ae26be9b2432371c26b
+        with:
+          working-directory: caller-test
+
+      - name: Assert no actions/ at workspace root after blocks
+        run: |
+          [ ! -e "$GITHUB_WORKSPACE/actions" ] || { echo "::error::$GITHUB_WORKSPACE/actions must not exist"; exit 1; }
