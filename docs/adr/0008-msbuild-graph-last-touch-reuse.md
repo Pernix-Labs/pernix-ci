@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-22). Spec: [P6 requirements](../specs/2026-11-22-ci-release-flow/requirements.md) Req 2, [P6 ci-release-flow design](../specs/2026-11-22-ci-release-flow/design.md) D3, D5. Block: [`release-units`](../../actions/release-units/README.md).
+Accepted (2026-11-22). Spec: [P6 requirements](../specs/2026-11-22-ci-release-flow/requirements.md) Req 2, [P6 ci-release-flow design](../specs/2026-11-22-ci-release-flow/design.md) D5. Block: [`release-units`](../../actions/release-units/README.md).
 
 ## Context
 

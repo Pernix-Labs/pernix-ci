@@ -67,7 +67,7 @@ Per task:
 
 - Task 8 (`ci.yml`) and task 9 (`cd.yml`, `image-retention.yml`): guard + checkout in every block-using job. No `pernix-ci-ref` input.
 - Task 10 (templates): the `uses: Pernix-Labs/pernix-ci/.github/workflows/<wf>.yml@<ref>` line is the only pin. Templates pass no pernix-ci ref.
-- Task 11 (self-tests): call the reusable workflows by local path. No ref input to pass. The probe covered the cross-repo call only. The same-repo `pull_request` case (where `job.workflow_sha` is expected to be the PR merge commit) is verified by task 11's own runs, and a guard or checkout failure there blocks task 11.
+- Task 11 (self-tests): call the reusable workflows by local path. No ref input to pass. The probe covered the cross-repo call only. The same-repo `pull_request` case is confirmed by PR #3 (https://github.com/Pernix-Labs/pernix-ci/pull/3): `test-release-ci.yml` and `test-release-cd.yml` call the reusable workflows by local path, and the guard and checkout at `job.workflow_sha` passed on every run.
 
 Rejected (D1):
 
