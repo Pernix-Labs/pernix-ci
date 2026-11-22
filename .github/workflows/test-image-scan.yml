@@ -176,24 +176,19 @@ jobs:
         run: |
           set -euo pipefail
           owner="${OWNER,,}"
-          prefixes=("pernix-ci-selftest-image-scan-${RUN_ID}-${RUN_ATTEMPT}")
+          names=("pernix-ci-selftest-image-scan-${RUN_ID}-${RUN_ATTEMPT}")
           kind="$(gh api "/users/${owner}" --jq .type)"
           if [[ "$kind" == "Organization" ]]; then base="/orgs/${owner}"; else base="/users/${owner}"; fi
-          names="$(gh api --paginate "${base}/packages?package_type=container&per_page=100" --jq '.[].name')"
-          leftover=()
-          while IFS= read -r name; do
-            [[ -n "$name" ]] || continue
-            for p in "${prefixes[@]}"; do
-              if [[ "$name" == "$p" || "$name" == "$p"-* ]]; then
-                leftover+=("$name")
-                break
-              fi
-            done
-          done <<<"$names"
-          if (( ${#leftover[@]} > 0 )); then
-            for name in "${leftover[@]}"; do
-              echo "::error::Selftest package ${name} left behind after run ${RUN_ID} attempt ${RUN_ATTEMPT}"
-            done
-            exit 1
-          fi
-          echo "::notice::No selftest package matching ${prefixes[*]} remains"
+          out="$(mktemp)"
+          failed=0
+          for name in "${names[@]}"; do
+            enc="$(jq -rn --arg n "$name" '$n|@uri')"
+            gh api -i "${base}/packages/container/${enc}" >"$out" 2>/dev/null || true
+            status="$(awk 'NR==1{print $2; exit}' "$out" | tr -d '\r')"
+            case "$status" in
+              404) echo "::notice::Selftest package ${name} absent" ;;
+              200) echo "::error::Selftest package ${name} left behind after run ${RUN_ID} attempt ${RUN_ATTEMPT}"; failed=1 ;;
+              *) echo "::error::Leftover lookup for ${name} returned HTTP ${status:-unknown}, cannot confirm cleanup"; failed=1 ;;
+            esac
+          done
+          exit "$failed"
