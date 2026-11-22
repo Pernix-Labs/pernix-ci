@@ -1,0 +1,73 @@
+name: test-dotnet-restore
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-restore/app
+      - id: run
+        uses: ./actions/dotnet-restore
+        with:
+          working-directory: tests/fixtures/dotnet-restore/app
+      - name: assert project output and assets file
+        env:
+          PROJECT: ${{ steps.run.outputs.project }}
+          CACHE_HIT: ${{ steps.run.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          echo "project=$PROJECT cache-hit=$CACHE_HIT"
+          [[ "$PROJECT" == app.slnx ]] || { echo "::error::expected project 'app.slnx', got '$PROJECT'"; exit 1; }
+          [[ -f tests/fixtures/dotnet-restore/app/src/Lib/obj/project.assets.json ]] || { echo "::error::expected project.assets.json"; exit 1; }
+
+  locked-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-restore/locked
+      - id: run
+        uses: ./actions/dotnet-restore
+        with:
+          working-directory: tests/fixtures/dotnet-restore/locked
+          locked-mode: "true"
+      - name: assert project output
+        env:
+          PROJECT: ${{ steps.run.outputs.project }}
+        run: |
+          set -euo pipefail
+          [[ "$PROJECT" == locked.slnx ]] || { echo "::error::expected project 'locked.slnx', got '$PROJECT'"; exit 1; }
+
+  ambiguous-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-restore/ambiguous
+          dotnet-version: 10.0.x
+      - id: run
+        uses: ./actions/dotnet-restore
+        continue-on-error: true
+        with:
+          working-directory: tests/fixtures/dotnet-restore/ambiguous
+      - name: assert failed
+        if: steps.run.outcome != 'failure'
+        run: echo "::error::expected failure" && exit 1
