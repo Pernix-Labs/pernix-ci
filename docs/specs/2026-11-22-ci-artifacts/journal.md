@@ -42,3 +42,8 @@ run: run_d5e187bc3a67
 - 2026-11-22T19:47:15Z note — task 9 failed: test-image-scan SIGPIPE at line 43 (run 45062502872); 6/7 green; draft PR #1; package leftover check blocked (gh token lacks read:packages)
 - 2026-11-22T19:47:44Z note — foreman: no local token widening; add in-CI leftover-package check job (if: always(), packages: read) to image self-tests; evidence = green CI
 - 2026-11-22T19:52:18Z note — task 9 retry 1 failed: all functional jobs green; leftover-check HTTP 400 on org package list with GITHUB_TOKEN; fix = per-name lookup
+- 2026-11-22T19:56:11Z worker_done — coord 9, sha 78dac54f740f777928599df42f7b933c747a205a, 7/7 green incl leftover-check
+- 2026-11-22T19:56:11Z verify-minted — coord 9 round 1, task task_b19875667855
+- 2026-11-22T19:57:45Z verdict — coord 9 APPROVE
+- 2026-11-22T19:58:46Z note — closeout: allowed append-only As-built notes section in design.md (body unchanged)
+- 2026-11-22T19:59:17Z closeout — all 9 coords approved; CI 7/7 green on 78dac54; as-built notes 1e3ad91
