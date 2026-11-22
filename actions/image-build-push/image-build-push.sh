@@ -148,9 +148,13 @@ cmd_outputs() {
 
   require image "$image"
   require tag "$tag"
+  # push=false: nothing is in the registry, so digest is the local image id.
+  if [[ "$push" == "false" ]]; then
+    digest="${IMAGE_ID:-}"
+  fi
   [[ "$digest" =~ $DIGEST_RE ]] || fail "build-push did not return a valid digest for ${image}:${tag}, got '${digest}'"
 
-  # push=false: nothing is in the registry, so ref is the local tag, digest the local image id.
+  # push=false: ref is the local tag.
   local ref="${image}@${digest}"
   if [[ "$push" == "false" ]]; then
     ref="${image}:${tag}"

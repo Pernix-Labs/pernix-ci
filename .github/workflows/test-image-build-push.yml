@@ -216,7 +216,13 @@ jobs:
           [[ "$OUT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "digest output '$OUT_DIGEST' malformed"
           [[ "$OUT_REF" == "${IMAGE}:${EXPECTED_TAG}" ]] || fail "ref output '$OUT_REF' != '${IMAGE}:${EXPECTED_TAG}'"
           local_id=$(docker image inspect --format '{{.Id}}' "$OUT_REF") || fail "local image ${OUT_REF} not found"
-          [[ "$local_id" == "$OUT_DIGEST" ]] || fail "local image id '$local_id' != digest output '$OUT_DIGEST'"
+          # Classic store: .Id is the config digest and must equal the imageid output.
+          # containerd store: .Id is the manifest digest, so only existence is asserted.
+          if [[ "$local_id" != "$OUT_DIGEST" ]]; then
+            docker info --format '{{json .DriverStatus}}' | grep -q 'io.containerd.snapshotter' ||
+              fail "local image id '$local_id' != digest output '$OUT_DIGEST'"
+            echo "containerd image store: .Id '$local_id' is a manifest digest, digest output '$OUT_DIGEST' is the config digest"
+          fi
           actual=$(docker run --rm --pull never "$OUT_REF" cat /build-info)
           expected=$(printf 'BUILD_VERSION=0.0.0-sha.%s\nBUILD_COMMIT=%s' "${SHA:0:7}" "$SHA")
           [[ "$actual" == "$expected" ]] || fail "/build-info mismatch, expected: $expected"

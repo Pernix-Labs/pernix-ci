@@ -111,6 +111,7 @@ runs:
       env:
         IMAGE: ${{ inputs.image }}
         TAG: ${{ steps.prepare.outputs.tag }}
-        DIGEST: ${{ inputs.push == 'true' && steps.build.outputs.digest || steps.build.outputs.imageid }}
+        DIGEST: ${{ steps.build.outputs.digest }}
+        IMAGE_ID: ${{ steps.build.outputs.imageid }}
         PUSH: ${{ inputs.push }}
       run: '"$GITHUB_ACTION_PATH/image-build-push.sh" outputs'
