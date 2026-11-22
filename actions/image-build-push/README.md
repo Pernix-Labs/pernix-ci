@@ -11,6 +11,8 @@ Builds a container image with `docker buildx` and pushes exactly one tag, `<imag
 
 The push happens only after the full build succeeds, so a failed build or push leaves no partial tag.
 
+`push: false` builds the same image but loads it into the runner's local Docker image store as `<image>:sha-<sha>` instead of pushing. It skips `docker login`, needs no `packages: write`, and is safe on fork PRs. `platforms` must name a single platform in this mode.
+
 ## Inputs
 
 | Name | Required | Default | Description |
@@ -23,9 +25,10 @@ The push happens only after the full build succeeds, so a failed build or push l
 | `build-args` | no | empty | Extra build args, newline-separated `KEY=VALUE`. |
 | `platforms` | no | `linux/amd64` | Comma-separated target platforms. |
 | `cache` | no | `true` | `true` or `false`. |
+| `push` | no | `true` | `true` pushes to GHCR. `false` skips `docker login` and loads the image locally only. |
 | `source-url` | no | `${{ github.server_url }}/${{ github.repository }}` | Value of the `source` label. |
-| `registry-token` | no | `${{ github.token }}` | Token for `ghcr.io` login. |
-| `registry-username` | no | `${{ github.actor }}` | Username for `ghcr.io` login. |
+| `registry-token` | no | `${{ github.token }}` | Token for `ghcr.io` login. Unused when `push` is `false`. |
+| `registry-username` | no | `${{ github.actor }}` | Username for `ghcr.io` login. Unused when `push` is `false`. |
 
 Invalid inputs fail with `::error::` naming the input before any login or build.
 
@@ -33,12 +36,12 @@ Invalid inputs fail with `::error::` naming the input before any login or build.
 
 ## Outputs
 
-| Name | Example |
-|---|---|
-| `image` | `ghcr.io/pernix-labs/foo` |
-| `tag` | `sha-<40 hex>` |
-| `digest` | `sha256:<64 hex>` |
-| `ref` | `ghcr.io/pernix-labs/foo@sha256:<64 hex>` |
+| Name | `push: true` | `push: false` |
+|---|---|---|
+| `image` | `ghcr.io/pernix-labs/foo` | `ghcr.io/pernix-labs/foo` |
+| `tag` | `sha-<40 hex>` | `sha-<40 hex>` |
+| `digest` | `sha256:<64 hex>` manifest digest | `sha256:<64 hex>` local image id |
+| `ref` | `ghcr.io/pernix-labs/foo@sha256:<64 hex>` | `ghcr.io/pernix-labs/foo:sha-<40 hex>` (local only) |
 
 ## Permissions
 
@@ -48,9 +51,11 @@ permissions:
   packages: write
 ```
 
+`push: false` needs only `contents: read`.
+
 ## Docker credentials
 
-The block runs `docker login ghcr.io` with `registry-token` via `--password-stdin`. Docker stores the credentials in `~/.docker/config.json`, and they stay there for the rest of the caller job. Later steps in the same job can pull and push `ghcr.io` with that token. This is accepted because runners are ephemeral and the caller job already holds the token. Run untrusted steps in a separate job if this matters.
+With `push: true` the block runs `docker login ghcr.io` with `registry-token` via `--password-stdin`. Docker stores the credentials in `~/.docker/config.json`, and they stay there for the rest of the caller job. Later steps in the same job can pull and push `ghcr.io` with that token. This is accepted because runners are ephemeral and the caller job already holds the token. Run untrusted steps in a separate job if this matters.
 
 ## Example
 

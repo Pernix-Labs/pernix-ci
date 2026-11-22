@@ -154,6 +154,88 @@ jobs:
           [[ -n "$marker" ]] || { echo "::error::empty /cache-marker"; exit 1; }
           echo "cache-marker=$marker" >>"$GITHUB_OUTPUT"
 
+  build-local:
+    # push=false: no registry writes, so this runs on fork PRs too.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Compute per-run image name
+        id: name
+        env:
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          echo "image=ghcr.io/${OWNER,,}/pernix-ci-selftest-image-build-push-local-${RUN_ID}-${RUN_ATTEMPT}" >>"$GITHUB_OUTPUT"
+
+      - name: Invalid push fails before side effects
+        id: bad-push
+        continue-on-error: true
+        uses: ./actions/image-build-push
+        with:
+          image: ${{ steps.name.outputs.image }}
+          context: tests/fixtures/image-build-push
+          push: "yes"
+
+      - name: Assert invalid push failed
+        env:
+          BAD_PUSH: ${{ steps.bad-push.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$BAD_PUSH" == "failure" ]] || { echo "::error::expected failure, got '$BAD_PUSH'"; exit 1; }
+
+      - name: Build without push
+        id: bp
+        uses: ./actions/image-build-push
+        with:
+          image: ${{ steps.name.outputs.image }}
+          context: tests/fixtures/image-build-push
+          push: "false"
+          cache: "false"
+
+      - name: Assert local outputs and image
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          OUT_IMAGE: ${{ steps.bp.outputs.image }}
+          OUT_TAG: ${{ steps.bp.outputs.tag }}
+          OUT_DIGEST: ${{ steps.bp.outputs.digest }}
+          OUT_REF: ${{ steps.bp.outputs.ref }}
+          EXPECTED_TAG: sha-${{ github.sha }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$OUT_IMAGE" == "$IMAGE" ]] || fail "image output '$OUT_IMAGE' != '$IMAGE'"
+          [[ "$OUT_TAG" == "$EXPECTED_TAG" ]] || fail "tag output '$OUT_TAG' != '$EXPECTED_TAG'"
+          [[ "$OUT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "digest output '$OUT_DIGEST' malformed"
+          [[ "$OUT_REF" == "${IMAGE}:${EXPECTED_TAG}" ]] || fail "ref output '$OUT_REF' != '${IMAGE}:${EXPECTED_TAG}'"
+          local_id=$(docker image inspect --format '{{.Id}}' "$OUT_REF") || fail "local image ${OUT_REF} not found"
+          [[ "$local_id" == "$OUT_DIGEST" ]] || fail "local image id '$local_id' != digest output '$OUT_DIGEST'"
+          actual=$(docker run --rm --pull never "$OUT_REF" cat /build-info)
+          expected=$(printf 'BUILD_VERSION=0.0.0-sha.%s\nBUILD_COMMIT=%s' "${SHA:0:7}" "$SHA")
+          [[ "$actual" == "$expected" ]] || fail "/build-info mismatch, expected: $expected"
+
+      - name: Check tag in GHCR
+        id: remote
+        uses: ./actions/image-exists
+        with:
+          image: ${{ steps.name.outputs.image }}
+          tag: ${{ steps.bp.outputs.tag }}
+
+      - name: Assert tag absent in GHCR
+        env:
+          EXISTS: ${{ steps.remote.outputs.exists }}
+          REF: ${{ steps.bp.outputs.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EXISTS" == "false" ]] || { echo "::error::${REF} exists in GHCR, push=false must not push"; exit 1; }
+
   rebuild:
     # Fresh runner: no local builder cache, so a matching marker proves the gha cache was used.
     needs: build
