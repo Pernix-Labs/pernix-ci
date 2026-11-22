@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="tests/Fixture.MtpXunit.Explicit/Fixture.MtpXunit.Explicit.csproj" />
+  <Project Path="tests/Fixture.MtpXunit.Tests/Fixture.MtpXunit.Tests.csproj" />
+</Solution>
