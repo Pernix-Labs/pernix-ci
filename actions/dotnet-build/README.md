@@ -45,7 +45,7 @@ Before building, the block checks every `build-args` line. Matching is case-inse
 5. `-p:`, `/p:`, `-property:`, `/property:`, or `--property:` when any `;`- or `,`-separated assignment names one of these properties. A bare `-p` or `--property` line is checked against the next line.
    - `TargetFramework`, `TargetFrameworks`
    - `TreatWarningsAsErrors`, `MSBuildTreatWarningsAsErrors`, `CodeAnalysisTreatWarningsAsErrors`
-   - `WarningsAsErrors`, `WarningsNotAsErrors`, `NoWarn`, `WarningLevel`
+   - `WarningsAsErrors`, `WarningsNotAsErrors`, `WarningsAsMessages`, `MSBuildWarningsAsMessages`, `NoWarn`, `WarningLevel`
    - `NuGetAudit`, `NuGetAuditMode`, `NuGetAuditLevel`
 
 Other properties are allowed, for example `-p:Version=1.2.3` and `-p:ContinuousIntegrationBuild=true`.

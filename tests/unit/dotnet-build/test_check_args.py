@@ -14,7 +14,8 @@ PROPERTY_SWITCHES = ("-p:", "/p:", "-property:", "/property:", "--property:")
 PROPERTIES = (
     "TargetFramework", "TargetFrameworks", "TreatWarningsAsErrors",
     "MSBuildTreatWarningsAsErrors", "CodeAnalysisTreatWarningsAsErrors",
-    "WarningsAsErrors", "WarningsNotAsErrors", "NoWarn", "WarningLevel",
+    "WarningsAsErrors", "WarningsNotAsErrors", "WarningsAsMessages",
+    "MSBuildWarningsAsMessages", "NoWarn", "WarningLevel",
     "NuGetAudit", "NuGetAuditMode", "NuGetAuditLevel",
 )
 
@@ -58,6 +59,12 @@ class CheckArgsTest(unittest.TestCase):
 
     def test_forbidden_property_in_semicolon_list(self):
         self.assertRejected("-p:Version=1.2.3;NoWarn=CS0168")
+
+    def test_warnings_as_messages_properties(self):
+        self.assertRejected("-p:WarningsAsMessages=CS0168")
+        self.assertRejected("/p:MSBuildWarningsAsMessages=MSB3277")
+        self.assertRejected("-p:Version=1.2.3;warningsasmessages=CS0168")
+        self.assertRejected("-p", "MSBuildWarningsAsMessages=MSB3277")
 
     def test_forbidden_property_in_comma_list(self):
         self.assertRejected("-p:Version=1.2.3,TreatWarningsAsErrors=false")

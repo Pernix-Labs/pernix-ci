@@ -57,6 +57,8 @@ gitleaks applies these files from the root of `working-directory`:
 - `.gitleaks.toml`: custom rules and allowlists. Override the location with `config-path`.
 - `.gitleaksignore`: one finding fingerprint per line. Copy the fingerprint from the job summary table, format `<commit>:<file>:<rule-id>:<line>`.
 
+Both files are read from the checked-out tree, so a pull request can change its own allowlist. Treat changes to `.gitleaks.toml` and `.gitleaksignore` as security-sensitive in review. Add CODEOWNERS entries for them in the caller repo.
+
 ## Example
 
 ```yaml

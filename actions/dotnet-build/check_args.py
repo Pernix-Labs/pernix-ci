@@ -25,6 +25,8 @@ FORBIDDEN_PROPERTIES = frozenset(p.lower() for p in (
     "CodeAnalysisTreatWarningsAsErrors",
     "WarningsAsErrors",
     "WarningsNotAsErrors",
+    "WarningsAsMessages",
+    "MSBuildWarningsAsMessages",
     "NoWarn",
     "WarningLevel",
     "NuGetAudit",
