@@ -1,0 +1,91 @@
+name: test-release-ci-default-wd
+
+# Regression self-test: call reusable ci.yml the way templates/ci.yml does,
+# with the default working-directory '.', so the caller repo root is the
+# mono-repo root. v1.0.0 joined that into 'repo/.' and dotnet-restore's
+# hashFiles rejected the pattern.
+#
+# The release-flow fixture becomes a repo root by committing its tree as a
+# parentless commit on a per-run branch. ci.yml gates that commit through
+# `sha`. push-image is false and the prefix is per run, so nothing is pushed.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  fork-notice:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: echo "::notice::Fork PR without contents:write. Default working-directory CI self-test skipped."
+
+  fixture-root:
+    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      branch: ${{ steps.commit.outputs.branch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Commit fixture tree as a repo root
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: pernix-ci-selftest/default-wd-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          tree="$(git rev-parse HEAD:tests/fixtures/release-flow/repo)"
+          sha="$(gh api -X POST "repos/${REPO}/git/commits" -f tree="$tree" -f message="pernix-ci selftest: release-flow fixture as repo root" --jq .sha)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::fixture commit creation returned '${sha}'"; exit 1; }
+          gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/heads/${BRANCH}" -f sha="$sha" >/dev/null
+          { echo "sha=${sha}"; echo "branch=${BRANCH}"; } >>"$GITHUB_OUTPUT"
+
+  ci:
+    needs: fixture-root
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      sha: ${{ needs.fixture-root.outputs.sha }}
+      push-image: ${{ 'false' }}
+      image-name-prefix: pernix-ci-selftest-default-wd-${{ github.run_id }}-${{ github.run_attempt }}-
+
+  assert:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Assert both units gated
+        env:
+          UNITS: ${{ needs.ci.outputs.units }}
+        run: |
+          set -euo pipefail
+          echo "$UNITS" | jq .
+          for name in svc lib; do
+            jq -e --arg n "$name" '.[] | select(.name == $n)' <<<"$UNITS" >/dev/null || { echo "::error::unit ${name} missing from ci outputs"; exit 1; }
+          done
+
+  cleanup:
+    needs: [fixture-root, ci, assert]
+    if: always() && needs.fixture-root.outputs.branch != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete per-run fixture branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ needs.fixture-root.outputs.branch }}
+        run: gh api -X DELETE "repos/${REPO}/git/refs/heads/${BRANCH}"

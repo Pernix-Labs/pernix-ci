@@ -71,3 +71,32 @@ jobs:
       - name: assert failed
         if: steps.run.outcome != 'failure'
         run: echo "::error::expected failure" && exit 1
+
+  # Regression: '.' and './x' produced hashFiles patterns with '.' segments,
+  # which hashFiles rejects ("Relative pathing . and .. is not allowed").
+  dot-working-directory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./actions/dotnet-setup
+        with:
+          working-directory: tests/fixtures/dotnet-restore/app
+      - id: dot
+        uses: ./actions/dotnet-restore
+        with:
+          working-directory: .
+          project: tests/fixtures/dotnet-restore/app/app.slnx
+      - id: dot-slash
+        uses: ./actions/dotnet-restore
+        with:
+          working-directory: ./tests/fixtures/dotnet-restore/app
+      - name: assert project outputs
+        env:
+          DOT_PROJECT: ${{ steps.dot.outputs.project }}
+          DOT_SLASH_PROJECT: ${{ steps.dot-slash.outputs.project }}
+        run: |
+          set -euo pipefail
+          [[ "$DOT_PROJECT" == tests/fixtures/dotnet-restore/app/app.slnx ]] || { echo "::error::expected 'tests/fixtures/dotnet-restore/app/app.slnx', got '$DOT_PROJECT'"; exit 1; }
+          [[ "$DOT_SLASH_PROJECT" == app.slnx ]] || { echo "::error::expected 'app.slnx', got '$DOT_SLASH_PROJECT'"; exit 1; }

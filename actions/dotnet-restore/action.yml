@@ -26,11 +26,22 @@ outputs:
 runs:
   using: composite
   steps:
+    # hashFiles rejects '.' and '..' segments, so '.', './x' and 'repo/.'
+    # become a plain glob prefix ('' or 'x/') first.
+    - id: glob
+      shell: bash
+      env:
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        prefix="$(python3 -I "$GITHUB_ACTION_PATH/../_shared/wdpath.py" glob "$INPUT_WORKING_DIRECTORY")"
+        echo "prefix=${prefix}" >>"$GITHUB_OUTPUT"
+
     - id: cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.nuget/packages
-        key: nuget-${{ runner.os }}-${{ hashFiles(format('{0}/**/Directory.Packages.props', inputs.working-directory), format('{0}/**/*.csproj', inputs.working-directory), format('{0}/**/packages.lock.json', inputs.working-directory), format('{0}/**/global.json', inputs.working-directory), format('{0}/**/nuget.config', inputs.working-directory), format('{0}/**/NuGet.Config', inputs.working-directory)) }}
+        key: nuget-${{ runner.os }}-${{ hashFiles(format('{0}**/Directory.Packages.props', steps.glob.outputs.prefix), format('{0}**/*.csproj', steps.glob.outputs.prefix), format('{0}**/packages.lock.json', steps.glob.outputs.prefix), format('{0}**/global.json', steps.glob.outputs.prefix), format('{0}**/nuget.config', steps.glob.outputs.prefix), format('{0}**/NuGet.Config', steps.glob.outputs.prefix)) }}
         restore-keys: nuget-${{ runner.os }}-
 
     - id: restore

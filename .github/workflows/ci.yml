@@ -116,6 +116,7 @@ jobs:
       push: ${{ steps.mode.outputs.push }}
       sha: ${{ steps.tag.outputs.commit || inputs.sha || github.event.pull_request.head.sha || github.sha }}
       run-key: ${{ steps.mode.outputs.run-key }}
+      wd: ${{ steps.wd.outputs.path }}
       unit: ${{ steps.tag.outputs.unit }}
       version: ${{ steps.tag.outputs.version }}
       commit: ${{ steps.tag.outputs.commit }}
@@ -159,14 +160,22 @@ jobs:
           path: repo
           fetch-depth: 0
           persist-credentials: false
+      - name: Normalize working-directory
+        id: wd
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          wd="$(python3 -I pernix-ci/actions/_shared/wdpath.py join repo "$WORKING_DIRECTORY")"
+          echo "path=${wd}" >>"$GITHUB_OUTPUT"
       - uses: ./pernix-ci/actions/dotnet-setup
         with:
-          working-directory: repo/${{ inputs.working-directory }}
+          working-directory: ${{ steps.wd.outputs.path }}
       - id: units
         uses: ./pernix-ci/actions/release-units
         with:
           units-file: ${{ inputs.units-file }}
-          working-directory: repo/${{ inputs.working-directory }}
+          working-directory: ${{ steps.wd.outputs.path }}
           solution: ${{ inputs.solution }}
           image-name-prefix: ${{ inputs.image-name-prefix }}
       - id: tag
@@ -177,7 +186,7 @@ jobs:
           unit-names: ${{ steps.units.outputs.unit-names }}
           default-branch: ${{ inputs.default-branch || github.event.repository.default_branch }}
           commit: ${{ inputs.commit }}
-          working-directory: repo/${{ inputs.working-directory }}
+          working-directory: ${{ steps.wd.outputs.path }}
       - name: Select units
         id: select
         env:
@@ -200,7 +209,7 @@ jobs:
       matrix:
         unit: ${{ fromJSON(needs.resolve.outputs.units) }}
     env:
-      UNIT_WD: repo/${{ inputs.working-directory }}
+      UNIT_WD: ${{ needs.resolve.outputs.wd }}
     steps:
       - name: Guard pernix-ci self-pin
         env:
