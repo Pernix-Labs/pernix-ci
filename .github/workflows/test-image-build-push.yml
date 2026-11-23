@@ -16,6 +16,7 @@ jobs:
   fork-notice:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Skip registry tests on fork PR
         run: echo "::notice::Fork PR has no packages:write. image-build-push registry tests skipped."
@@ -23,6 +24,7 @@ jobs:
   build:
     if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -157,6 +159,7 @@ jobs:
   build-local:
     # push=false: no registry writes, so this runs on fork PRs too.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
@@ -246,6 +249,7 @@ jobs:
     # Fresh runner: no local builder cache, so a matching marker proves the gha cache was used.
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -275,6 +279,7 @@ jobs:
     needs: [build, rebuild]
     if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: write
     steps:
@@ -300,6 +305,7 @@ jobs:
     needs: [build, rebuild, cleanup]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: read
     steps:

@@ -16,6 +16,7 @@ jobs:
   fork-notice:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Skip registry tests on fork PR
         run: echo "::notice::Fork PR has no packages:write. image-scan registry tests skipped."
@@ -23,6 +24,7 @@ jobs:
   scan:
     if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -132,6 +134,7 @@ jobs:
 
   scan-local:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -202,6 +205,7 @@ jobs:
     needs: [scan]
     if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: write
     steps:
@@ -227,6 +231,7 @@ jobs:
     needs: [scan, cleanup]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: read
     steps:

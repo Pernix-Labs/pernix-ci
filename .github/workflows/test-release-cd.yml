@@ -18,6 +18,7 @@ jobs:
   fork-notice:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions: {}
     steps:
       - run: echo "::notice::Fork PR without packages:write and without the head branch in this repo. release-flow CD self-tests skipped."
@@ -52,6 +53,7 @@ jobs:
   assert-svc:
     needs: [ci-svc, release-svc]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: read
     steps:
@@ -144,6 +146,7 @@ jobs:
     needs: release-lib
     if: needs.release-lib.outputs.packages != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     env:
@@ -213,6 +216,7 @@ jobs:
     needs: [ci-svc, release-svc, assert-svc, ci-lib, release-lib]
     if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: write
     steps:
@@ -242,6 +246,7 @@ jobs:
     needs: [cleanup]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: read
     steps:
