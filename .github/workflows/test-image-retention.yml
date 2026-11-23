@@ -10,6 +10,7 @@ permissions: {}
 jobs:
   remediation-message:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -34,6 +35,7 @@ jobs:
   fork-notice:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions: {}
     steps:
       - run: echo "::notice::Fork PR without packages:write. image-retention registry self-test skipped."
@@ -41,6 +43,7 @@ jobs:
   test:
     if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -180,6 +183,7 @@ jobs:
     needs: [test]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: read
     steps:

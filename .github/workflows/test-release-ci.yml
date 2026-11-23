@@ -19,6 +19,7 @@ jobs:
   fork-notice:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions: {}
     steps:
       - run: echo "::notice::Fork PR without packages:write. release-flow CI registry self-tests (ci-build, ci-reuse) skipped. ci-local runs."
@@ -37,6 +38,7 @@ jobs:
   assert-build:
     needs: ci-build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions: {}
     steps:
       - name: Assert svc built and pushed (reused=false)
@@ -69,6 +71,7 @@ jobs:
   assert-reuse:
     needs: [ci-build, ci-reuse]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions: {}
     steps:
       - name: Assert svc reused (reused=true, same image-ref)
@@ -102,6 +105,7 @@ jobs:
   assert-local:
     needs: ci-local
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: read
     steps:
@@ -140,6 +144,7 @@ jobs:
     needs: [ci-build, assert-build, ci-reuse, assert-reuse, ci-local, assert-local]
     if: always() && (github.event_name == 'push' || !github.event.pull_request.head.repo.fork)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: write
     steps:
@@ -174,6 +179,7 @@ jobs:
     needs: [cleanup]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: read
     steps:

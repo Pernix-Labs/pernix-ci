@@ -75,3 +75,4 @@ run: run_db1582f36196
 - 2026-11-22T21:31:06Z note — closeout review: 2 major (reuse skips NuGet gate for published packages; scanned vs promoted digest not pinned), 3 minor validation fixes -> rework task_4b7fd8048210
 - 2026-11-22T21:33:32Z note — review rework 43572ad merged on branch (F1-F5); C checked cd.yml digest pin diff
 - 2026-11-22T21:39:30Z gate — ask gate_42ede79c67f4 on task_709a677fb750 (status completed): PR #3 verdict
+- 2026-11-22T21:45:17Z note — post-merge: PR #3 merged at 50c1228; tagging v1.0.0+v1 denied by local permission classifier, escalated

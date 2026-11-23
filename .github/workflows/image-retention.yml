@@ -81,15 +81,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Normalize working-directory
+        id: wd
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          wd="$(python3 -I pernix-ci/actions/_shared/wdpath.py join repo "$WORKING_DIRECTORY")"
+          echo "path=${wd}" >>"$GITHUB_OUTPUT"
       - uses: ./pernix-ci/actions/dotnet-setup
         with:
-          working-directory: repo/${{ inputs.working-directory }}
+          working-directory: ${{ steps.wd.outputs.path }}
 
       - id: units
         uses: ./pernix-ci/actions/release-units
         with:
           units-file: ${{ inputs.units-file }}
-          working-directory: repo/${{ inputs.working-directory }}
+          working-directory: ${{ steps.wd.outputs.path }}
           image-name-prefix: ${{ inputs.image-name-prefix }}
           solution: ${{ inputs.solution }}
 
